@@ -1485,6 +1485,7 @@ function sendChatMessage(overrideContent) {
       renderChatBubble('assistant', reply);
       ApexState.chatHistory.push({ role: 'assistant', content: reply });
       saveChatHistory();
+      playChime();
     })
     .catch(err => {
       loadingEl.remove();
@@ -2261,6 +2262,12 @@ function explainError() {
   ApexState.settings.soundsEnabled = true;
 
   window.toggleNotifications = function (on) {
+    if (!('Notification' in window)) {
+      const cb = document.getElementById('settings-notifs');
+      if (cb) cb.checked = false;
+      termPrint('warn', '[Settings] Desktop notifications not supported in this browser');
+      return;
+    }
     if (on && Notification.permission === 'default') {
       Notification.requestPermission().then(p => {
         ApexState.settings.notificationsEnabled = p === 'granted';
@@ -2274,6 +2281,32 @@ function explainError() {
 
   window.toggleSounds = function (on) {
     ApexState.settings.soundsEnabled = on;
+    termPrint('output', `[Settings] Sound effects: ${on ? 'ON' : 'OFF'}`);
+  };
+
+  ApexState.settings.aiChimeEnabled = true;
+  window.toggleAIChime = function (on) {
+    ApexState.settings.aiChimeEnabled = on;
+  };
+
+  /* ── Play a brief Web-Audio chime ── */
+  window.playChime = function () {
+    if (!ApexState.settings.soundsEnabled || !ApexState.settings.aiChimeEnabled) return;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.4);
+      osc.onended = () => ctx.close();
+    } catch (_) {}
   };
 
   /* ── Clear All Settings ── */
