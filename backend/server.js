@@ -337,20 +337,38 @@ app.post('/api/git/push', fsLimiter, async (_req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
+// Conservative validation for git branch/ref names coming from the client.
+// Allows alphanumerics, dot, underscore, hyphen, and forward slash, and
+// disallows names starting with '-' to avoid option-style injection.
+function isSafeGitRef(ref) {
+  if (typeof ref !== 'string') return false;
+  if (!ref.length) return false;
+  if (ref.startsWith('-')) return false;
+  return /^[A-Za-z0-9._\/-]+$/.test(ref);
+}
+
 app.post('/api/git/branch', fsLimiter, async (req, res) => {
   try {
-    const name = req.body.name;
-    if (!name || !name.trim()) return res.status(400).json({ error: 'Branch name required' });
-    const output = await runGit(['checkout', '-b', name.trim()]);
+    const rawName = req.body.name;
+    const name = rawName && rawName.trim();
+    if (!name) return res.status(400).json({ error: 'Branch name required' });
+    if (!isSafeGitRef(name)) {
+      return res.status(400).json({ error: 'Invalid branch name' });
+    }
+    const output = await runGit(['checkout', '-b', name]);
     res.json({ output });
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
 app.post('/api/git/checkout', fsLimiter, async (req, res) => {
   try {
-    const branch = req.body.branch;
-    if (!branch || !branch.trim()) return res.status(400).json({ error: 'Branch name required' });
-    const output = await runGit(['checkout', branch.trim()]);
+    const rawBranch = req.body.branch;
+    const branch = rawBranch && rawBranch.trim();
+    if (!branch) return res.status(400).json({ error: 'Branch name required' });
+    if (!isSafeGitRef(branch)) {
+      return res.status(400).json({ error: 'Invalid branch name' });
+    }
+    const output = await runGit(['checkout', branch]);
     res.json({ output });
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
