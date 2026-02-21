@@ -2068,6 +2068,15 @@ function explainError() {
   window.mpDeletePlaylist = function (idx) {
     if (idx === 0) return;
     MP.playlists.splice(idx, 1);
+    // Adjust active playlist index so it continues to refer to the same logical playlist
+    if (MP.activePl === idx) {
+      // If the active playlist was deleted, reset to the base playlist
+      MP.activePl = 0;
+    } else if (MP.activePl > idx) {
+      // If a playlist before the active one was deleted, shift active index left
+      MP.activePl -= 1;
+    }
+    // Ensure active index is within bounds
     if (MP.activePl >= MP.playlists.length) MP.activePl = 0;
     renderPlaylistBar();
     renderTrackList();
