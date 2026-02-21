@@ -1218,7 +1218,12 @@ async function callLLMAPI(history, model, systemPrompt) {
       throw new Error(err.error?.message || `DeepSeek API error ${res.status}`);
     }
     const data = await res.json();
-    return data.choices[0].message.content;
+    const firstChoice = Array.isArray(data.choices) && data.choices.length > 0 ? data.choices[0] : null;
+    const content = firstChoice?.message?.content;
+    if (typeof content !== 'string') {
+      throw new Error('DeepSeek API returned an unexpected response without choices content.');
+    }
+    return content;
   }
 
   // Ollama (local)
