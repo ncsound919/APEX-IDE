@@ -187,7 +187,19 @@ function walkTree(dir, depth, maxDepth) {
 
 /* ─── Express App ─────────────────────────────────────────────────────── */
 const app = express();
-app.use(cors({ origin: '*' }));
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:3000')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no Origin header (e.g., curl, same-origin)
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
+}));
 app.use(express.json({ limit: '10mb' }));
 
 /* ── Health ── */
