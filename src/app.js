@@ -33,9 +33,11 @@ const ApexState = {
   projectName: '',
   projectType: 'general',
   mcpServers: [
-    { name: 'Filesystem', cmd: 'npx @modelcontextprotocol/server-filesystem', connected: true },
-    { name: 'GitHub',     cmd: 'npx @modelcontextprotocol/server-github',     connected: false },
+    { name: 'Filesystem', cmd: 'npx @modelcontextprotocol/server-filesystem', connected: true,  folderPath: '' },
+    { name: 'GitHub',     cmd: 'npx @modelcontextprotocol/server-github',     connected: false, folderPath: '' },
   ],
+  cliInstances: [],
+  uploadedComponents: [],
   cliHistory: [],
   cliHistoryIdx: -1,
   // Chat state
@@ -190,6 +192,7 @@ function initApp() {
   log(`[INFO] Mode: ${ApexState.mode.toUpperCase()}`);
   log(`[INFO] Project: ${ApexState.projectName || '(unnamed)'}`);
   renderMCPServers();
+  renderCLIInstances();
 }
 
 /* ─── Load Monaco ─────────────────────────────────────────────────── */
@@ -786,6 +789,7 @@ function populateSettingsKeys() {
     const el = document.getElementById(id);
     if (el && val) el.value = val;
   });
+  renderSettingsComponents();
 }
 
 /* ─── Project Theme ───────────────────────────────────────────────── */
@@ -998,18 +1002,159 @@ function clearCLIOutput() {
   if (out) out.innerHTML = '';
 }
 
-/* ─── MCP Servers ─────────────────────────────────────────────────── */
+/* ─── CLI Instances ───────────────────────────────────────────────── */
+function extractFolderName(fileInput) {
+  return fileInput?.files?.length
+    ? fileInput.files[0].webkitRelativePath.split('/')[0]
+    : '';
+}
+
+function addCLIInstance() {
+  const nameEl   = document.getElementById('cli-instance-name');
+  const folderEl = document.getElementById('cli-instance-folder');
+  const name = nameEl?.value.trim();
+  if (!name) { cliPrint('warn', '[CLI] Please enter a CLI name.'); return; }
+
+  const folderPath = extractFolderName(folderEl);
+  const instance = { name, folderPath, connected: false };
+  ApexState.cliInstances.push(instance);
+  if (folderPath) {
+    ApexState.uploadedComponents.push({ type: 'CLI', name, folderPath });
+    renderSettingsComponents();
+  }
+  nameEl.value = '';
+  if (folderEl) { folderEl.value = ''; }
+  const folderNameEl = document.getElementById('cli-instance-folder-name');
+  if (folderNameEl) folderNameEl.textContent = 'No folder selected';
+  renderCLIInstances();
+  cliPrint('info', `[CLI] Instance added: ${name}`);
+}
+
+function renderCLIInstances() {
+  const list = document.getElementById('cli-instance-list');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!ApexState.cliInstances.length) {
+    const empty = document.createElement('div');
+    empty.className = 'cli-empty-note';
+    empty.textContent = 'No CLI instances added yet.';
+    list.appendChild(empty);
+    return;
+  }
+  ApexState.cliInstances.forEach((inst, i) => {
+    const card = document.createElement('div');
+    card.className = 'cli-instance-card';
+
+    const info = document.createElement('div');
+    info.className = 'cli-instance-info';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'cli-instance-name';
+    nameEl.textContent = `💻 ${inst.name}`;
+    info.appendChild(nameEl);
+    if (inst.folderPath) {
+      const folderEl = document.createElement('div');
+      folderEl.className = 'cli-instance-folder';
+      folderEl.textContent = `📁 ${inst.folderPath}`;
+      info.appendChild(folderEl);
+    }
+
+    // Folder upload button
+    const folderLabel = document.createElement('label');
+    folderLabel.className = 'mcp-folder-btn';
+    folderLabel.title = inst.folderPath ? `Change folder (${inst.folderPath})` : 'Upload folder';
+    folderLabel.textContent = '📂';
+    const folderFile = document.createElement('input');
+    folderFile.type = 'file';
+    folderFile.webkitDirectory = true;
+    folderFile.multiple = true;
+    folderFile.style.display = 'none';
+    folderFile.addEventListener('change', () => {
+      const fp = extractFolderName(folderFile);
+      if (!fp) return;
+      const instanceName = ApexState.cliInstances[i].name;
+      ApexState.cliInstances[i].folderPath = fp;
+      const existing = ApexState.uploadedComponents.findIndex(c => c.type === 'CLI' && c.name === instanceName);
+      if (existing >= 0) ApexState.uploadedComponents[existing].folderPath = fp;
+      else ApexState.uploadedComponents.push({ type: 'CLI', name: instanceName, folderPath: fp });
+      renderCLIInstances();
+      renderSettingsComponents();
+      cliPrint('info', `[CLI] Folder "${fp}" linked to ${instanceName}`);
+    });
+    folderLabel.appendChild(folderFile);
+
+    // Connect button
+    const connectBtn = document.createElement('button');
+    connectBtn.className = `mcp-connect-btn${inst.connected ? ' connected' : ''}`;
+    connectBtn.textContent = inst.connected ? '● Connected' : '○ Connect';
+    connectBtn.addEventListener('click', () => toggleCLIInstance(i));
+
+    card.appendChild(info);
+    card.appendChild(folderLabel);
+    card.appendChild(connectBtn);
+    list.appendChild(card);
+  });
+}
+
+function toggleCLIInstance(idx) {
+  const inst = ApexState.cliInstances[idx];
+  if (!inst) return;
+  inst.connected = !inst.connected;
+  renderCLIInstances();
+  cliPrint('info', `[CLI] ${inst.name}: ${inst.connected ? 'connected' : 'disconnected'}`);
+}
+
+/* ─── Settings: Uploaded Components ──────────────────────────────── */
+function renderSettingsComponents() {
+  const container = document.getElementById('settings-uploads-list');
+  if (!container) return;
+  container.innerHTML = '';
+  if (!ApexState.uploadedComponents.length) {
+    const note = document.createElement('div');
+    note.className = 'settings-note';
+    note.textContent = 'No folders uploaded yet.';
+    container.appendChild(note);
+    return;
+  }
+  ApexState.uploadedComponents.forEach(comp => {
+    const row = document.createElement('div');
+    row.className = 'settings-upload-row';
+    const badge = document.createElement('span');
+    badge.className = `settings-upload-badge settings-upload-badge-${comp.type.toLowerCase()}`;
+    badge.textContent = comp.type;
+    const label = document.createElement('span');
+    label.className = 'settings-upload-label';
+    label.textContent = `${comp.name}`;
+    const folder = document.createElement('span');
+    folder.className = 'settings-upload-folder';
+    folder.textContent = `📁 ${comp.folderPath}`;
+    row.appendChild(badge);
+    row.appendChild(label);
+    row.appendChild(folder);
+    container.appendChild(row);
+  });
+}
+
+
 function addMCPServer() {
-  const nameEl = document.getElementById('mcp-server-name');
-  const cmdEl  = document.getElementById('mcp-server-cmd');
+  const nameEl   = document.getElementById('mcp-server-name');
+  const cmdEl    = document.getElementById('mcp-server-cmd');
+  const folderEl = document.getElementById('mcp-server-folder');
   const name = nameEl?.value.trim();
   const cmd  = cmdEl?.value.trim();
   if (!name || !cmd) { termPrint('warn', '[MCP] Please enter server name and command.'); return; }
 
-  const server = { name, cmd, connected: false };
+  const folderPath = extractFolderName(folderEl);
+  const server = { name, cmd, connected: false, folderPath };
   ApexState.mcpServers.push(server);
+  if (folderPath) {
+    ApexState.uploadedComponents.push({ type: 'MCP', name, folderPath });
+    renderSettingsComponents();
+  }
   nameEl.value = '';
   cmdEl.value  = '';
+  if (folderEl) { folderEl.value = ''; }
+  const folderNameEl = document.getElementById('mcp-server-folder-name');
+  if (folderNameEl) folderNameEl.textContent = 'No folder selected';
   renderMCPServers();
   termPrint('output', `[MCP] Server added: ${name}`);
 }
@@ -1037,15 +1182,47 @@ function renderMCPServers() {
     cmdEl.textContent = s.cmd;
     info.appendChild(nameEl);
     info.appendChild(cmdEl);
+    if (s.folderPath) {
+      const folderEl = document.createElement('div');
+      folderEl.className = 'mcp-server-folder';
+      folderEl.textContent = `📁 ${s.folderPath}`;
+      info.appendChild(folderEl);
+    }
 
-    const dot = document.createElement('span');
-    dot.className = `mcp-status-dot ${s.connected ? 'connected' : 'disconnected'}`;
-    dot.title = s.connected ? 'Connected' : 'Disconnected';
-    dot.addEventListener('click', () => toggleMCPServer(i));
+    // Folder upload button
+    const folderLabel = document.createElement('label');
+    folderLabel.className = 'mcp-folder-btn';
+    folderLabel.title = s.folderPath ? `Change folder (${s.folderPath})` : 'Upload folder';
+    folderLabel.textContent = '📂';
+    const folderFile = document.createElement('input');
+    folderFile.type = 'file';
+    folderFile.webkitDirectory = true;
+    folderFile.multiple = true;
+    folderFile.style.display = 'none';
+    folderFile.addEventListener('change', () => {
+      const fp = extractFolderName(folderFile);
+      if (!fp) return;
+      const serverName = ApexState.mcpServers[i].name;
+      ApexState.mcpServers[i].folderPath = fp;
+      const existing = ApexState.uploadedComponents.findIndex(c => c.type === 'MCP' && c.name === serverName);
+      if (existing >= 0) ApexState.uploadedComponents[existing].folderPath = fp;
+      else ApexState.uploadedComponents.push({ type: 'MCP', name: serverName, folderPath: fp });
+      renderMCPServers();
+      renderSettingsComponents();
+      termPrint('output', `[MCP] Folder "${fp}" linked to ${serverName}`);
+    });
+    folderLabel.appendChild(folderFile);
+
+    // Connect button
+    const connectBtn = document.createElement('button');
+    connectBtn.className = `mcp-connect-btn${s.connected ? ' connected' : ''}`;
+    connectBtn.textContent = s.connected ? '● Connected' : '○ Connect';
+    connectBtn.addEventListener('click', () => toggleMCPServer(i));
 
     card.appendChild(icon);
     card.appendChild(info);
-    card.appendChild(dot);
+    card.appendChild(folderLabel);
+    card.appendChild(connectBtn);
     list.appendChild(card);
   });
 }

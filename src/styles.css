@@ -788,6 +788,61 @@ kbd {
 }
 .mcp-input:focus { border-color: var(--accent-gold); outline: none; }
 .mcp-add-btn { width: 100%; margin-top: 2px; padding: 7px; font-size: 12px; }
+.mcp-server-folder { font-size: 10px; color: var(--accent-cyan); font-family: var(--font-code); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mcp-folder-btn {
+  font-size: 14px; cursor: pointer; flex-shrink: 0;
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 3px 6px; transition: border-color .15s;
+}
+.mcp-folder-btn:hover { border-color: var(--accent-gold); }
+.mcp-connect-btn {
+  flex-shrink: 0; font-size: 10px; font-weight: 700; letter-spacing: .4px;
+  padding: 4px 8px; border-radius: var(--radius-sm);
+  background: var(--bg-tertiary); border: 1px solid var(--text-muted); color: var(--text-muted);
+  cursor: pointer; transition: all .15s; white-space: nowrap;
+}
+.mcp-connect-btn:hover { border-color: var(--accent-gold); color: var(--text-primary); }
+.mcp-connect-btn.connected { background: rgba(57,255,20,.12); border-color: var(--accent-green); color: var(--accent-green); }
+.mcp-folder-row {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 5px 8px;
+}
+.mcp-folder-label-text { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+.mcp-folder-pick-btn {
+  font-size: 11px; font-weight: 600; cursor: pointer;
+  background: var(--bg-active); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 2px 8px; color: var(--text-secondary);
+  transition: border-color .15s;
+}
+.mcp-folder-pick-btn:hover { border-color: var(--accent-gold); color: var(--text-primary); }
+.mcp-folder-name { font-size: 11px; color: var(--accent-cyan); font-family: var(--font-code); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* CLI Instances */
+.cli-instance-list { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.cli-instance-card {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 7px 10px;
+}
+.cli-instance-info { flex: 1; min-width: 0; }
+.cli-instance-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.cli-instance-folder { font-size: 10px; color: var(--accent-cyan); font-family: var(--font-code); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cli-empty-note { font-size: 11px; color: var(--text-muted); padding: 4px 0; font-style: italic; }
+/* Settings uploads */
+.settings-uploads-list { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+.settings-upload-row {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 5px 10px;
+}
+.settings-upload-badge {
+  font-size: 9px; font-weight: 700; letter-spacing: .8px; padding: 2px 6px;
+  border-radius: 10px; flex-shrink: 0; text-transform: uppercase;
+}
+.settings-upload-badge-mcp  { background: rgba(155,89,255,.2); color: var(--accent-purple); border: 1px solid var(--accent-purple); }
+.settings-upload-badge-cli  { background: rgba(245,197,24,.15); color: var(--accent-gold); border: 1px solid var(--accent-gold); }
+.settings-upload-label { font-size: 12px; font-weight: 600; color: var(--text-primary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-upload-folder { font-size: 11px; color: var(--accent-cyan); font-family: var(--font-code); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
 .mcp-tool-item {
   display: flex; align-items: center; gap: 8px;
   background: var(--bg-tertiary); border: 1px solid var(--border);
