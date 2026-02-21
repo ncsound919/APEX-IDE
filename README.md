@@ -108,6 +108,23 @@ The IDE auto-detects the backend on startup. The topbar badge shows **⬡ LIVE**
 | `POST` | `/api/lint` | Lint code server-side |
 | `WS` | `/ws/terminal` | Real interactive terminal |
 
+## Security Considerations
+
+The APEX IDE backend exposes powerful operations, including:
+
+- Arbitrary command execution via `/api/exec`
+- Interactive terminal sessions via `/ws/terminal`
+- Read/write access to the local filesystem and Git repositories
+
+**This backend is intended _only_ for use in trusted, local development environments.**
+
+- By default, the server binds to `localhost`, but this does **not** remove all risk.
+- There is **no authentication** built in; any process or user on the same machine that can reach the port can issue requests.
+- Do **not** expose the backend directly to the internet or to untrusted networks (e.g., via port forwarding, reverse proxies, or public cloud hosts) without adding your own strong authentication, authorization, and network controls.
+- Avoid running the backend on multi-user or shared machines where untrusted users have access.
+- Be aware that running the backend grants its process the same level of access to your files and system as the user account that started it.
+
+Use this backend only when you understand and accept these risks. For production or shared environments, you should treat this code as a starting point and add appropriate security hardening (authentication, authorization, sandboxing, and network isolation).
 ## Keyboard Shortcuts
 
 | Shortcut | Action |
