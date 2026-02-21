@@ -5,6 +5,13 @@
 
 'use strict';
 
+const APEX_VERSION = '2.0.0';
+const MAX_IMPORT_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+
+function getFileId(name) {
+  return 'file-' + name.replace(/[^a-z0-9]/gi, '-');
+}
+
 /* ─── State ──────────────────────────────────────────────────────── */
 const ApexState = {
   userHandle: 'User',
@@ -332,7 +339,7 @@ function renderFileTree(tree = SAMPLE_TREE) {
 }
 
 function openFileTab(node) {
-  const id = `file-${node.name.replace(/[^a-z0-9]/gi, '-')}`;
+  const id = getFileId(node.name);
   if (!ApexState.openTabs.includes(id)) {
     ApexState.openTabs.push(id);
     addTabUI(id, node.name, getFileIcon(node.name));
@@ -408,7 +415,7 @@ function showMonacoPaneFor(node) {
     const langMap = { js: 'javascript', ts: 'typescript', css: 'css', html: 'html', json: 'json', md: 'markdown', py: 'python', go: 'go', rs: 'rust', sh: 'shell', txt: 'plaintext' };
     const ext = node.name.split('.').pop().toLowerCase();
     const lang = langMap[ext] || 'plaintext';
-    const fileId = 'file-' + node.name.replace(/[^a-z0-9]/gi, '-');
+    const fileId = getFileId(node.name);
 
     // Save current buffer before switching
     const prevTab = ApexState.activeTab;
@@ -515,7 +522,7 @@ function initTerminal() {
   termPrint('output', '| |_| |  __/| |___|__   _|| || |_| | |___ ');
   termPrint('output', ' \\___/|_|   |_____|  |_||___|____/|_____|');
   termPrint('output', '');
-  termPrint('output', 'APEX IDE — Megacode Edition  v2.0.0');
+  termPrint('output', `APEX IDE — Megacode Edition  v${APEX_VERSION}`);
   termPrint('output', 'Type "help" for available commands.\n');
 }
 
@@ -619,10 +626,10 @@ const CMD_HANDLERS = {
   cat: (args) => {
     if (!args.length) { termPrint('warn', 'Usage: cat <filename>'); return; }
     const name = args[0];
-    const fileId = 'file-' + name.replace(/[^a-z0-9]/gi, '-');
+    const fileId = getFileId(name);
     const content = ApexState.fileBuffers[fileId];
     if (content != null) { termPrint('output', content); }
-    else { termPrint('error', `cat: ${name}: No such file`); }
+    else { termPrint('error', `cat: ${name}: No content stored (open and edit the file first)`); }
   },
   touch: (args) => {
     if (!args.length) { termPrint('warn', 'Usage: touch <filename>'); return; }
@@ -658,7 +665,7 @@ const CMD_HANDLERS = {
     termPrint('output', `EDITOR=monaco`);
     termPrint('output', `TERM=apex-terminal`);
   },
-  version: () => termPrint('output', 'APEX IDE v2.0.0 — Megacode Edition'),
+  version: () => termPrint('output', `APEX IDE v${APEX_VERSION} — Megacode Edition`),
   theme: (args) => {
     if (!args.length) { termPrint('output', 'Available themes: ' + Object.keys(THEMES).join(', ')); return; }
     changeTheme(args[0]);
@@ -890,7 +897,14 @@ function runSearch(query) {
   const q = matchCase ? query : query.toLowerCase();
   let re = null;
   if (useRegex) {
-    try { re = new RegExp(query, matchCase ? 'g' : 'gi'); } catch (_) { results.innerHTML = '<p class="empty-state">Invalid regex</p>'; return; }
+    try { re = new RegExp(query, matchCase ? 'g' : 'gi'); } catch (err) {
+      const p = document.createElement('p');
+      p.className = 'empty-state';
+      p.textContent = `Invalid regex: ${err.message || 'parse error'}`;
+      results.innerHTML = '';
+      results.appendChild(p);
+      return;
+    }
   }
 
   // Collect all file nodes from the tree
@@ -914,7 +928,7 @@ function runSearch(query) {
     const nameToCheck = matchCase ? path : path.toLowerCase();
     const nameMatch = re ? re.test(path) : nameToCheck.includes(q);
     // Also search stored buffer content
-    const fileId = 'file-' + node.name.replace(/[^a-z0-9]/gi, '-');
+    const fileId = getFileId(node.name);
     const content = ApexState.fileBuffers?.[fileId] || '';
     const contentToCheck = matchCase ? content : content.toLowerCase();
     const contentMatch = content && (re ? re.test(content) : contentToCheck.includes(q));
@@ -924,15 +938,26 @@ function runSearch(query) {
   });
 
   if (matches.length === 0) { results.innerHTML = '<p class="empty-state">No results found</p>'; return; }
-  results.innerHTML = matches.map(m => {
+  results.innerHTML = '';
+  matches.forEach(m => {
     const icon = getFileIcon(m.path);
-    const badge = m.contentMatch ? '<span class="search-content-badge">content</span>' : '';
-    return `<div class="file-item" onclick="openFileTab(${JSON.stringify(m.node).replace(/"/g, '&quot;')})">
-      <span>${icon}</span>
-      <span>${m.path}</span>
-      ${badge}
-    </div>`;
-  }).join('');
+    const item = document.createElement('div');
+    item.className = 'file-item';
+    const iconSpan = document.createElement('span');
+    iconSpan.textContent = icon;
+    const pathSpan = document.createElement('span');
+    pathSpan.textContent = m.path;
+    item.appendChild(iconSpan);
+    item.appendChild(pathSpan);
+    if (m.contentMatch) {
+      const badge = document.createElement('span');
+      badge.className = 'search-content-badge';
+      badge.textContent = 'content';
+      item.appendChild(badge);
+    }
+    item.addEventListener('click', () => openFileTab(m.node));
+    results.appendChild(item);
+  });
 }
 
 /* ─── Settings ────────────────────────────────────────────────────── */
@@ -3022,7 +3047,7 @@ window.addEventListener('DOMContentLoaded', () => {
     let importedCount = 0;
     Array.from(files).forEach(file => {
       // Skip binary/large files
-      if (file.size > 5 * 1024 * 1024) { showToast(`Skipped ${file.name} (too large)`, 'warn'); return; }
+      if (file.size > MAX_IMPORT_FILE_SIZE) { showToast(`Skipped ${file.name} (too large)`, 'warn'); return; }
       const exists = SAMPLE_TREE.some(n => n.name === file.name);
       if (exists) { showToast(`${file.name} already exists`, 'warn'); return; }
 
@@ -3030,7 +3055,7 @@ window.addEventListener('DOMContentLoaded', () => {
       reader.onload = () => {
         const node = { name: file.name, type: 'file', depth: 0, lang: 'javascript' };
         SAMPLE_TREE.push(node);
-        const fileId = 'file-' + file.name.replace(/[^a-z0-9]/gi, '-');
+        const fileId = getFileId(file.name);
         ApexState.fileBuffers[fileId] = reader.result;
         renderFileTree();
         importedCount++;
