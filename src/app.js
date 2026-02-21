@@ -1196,7 +1196,7 @@ function renderMCPServers() {
     folderLabel.textContent = '📂';
     const folderFile = document.createElement('input');
     folderFile.type = 'file';
-    folderFile.webkitDirectory = true;
+    folderFile.setAttribute('webkitdirectory', '');
     folderFile.multiple = true;
     folderFile.style.display = 'none';
     folderFile.addEventListener('change', () => {
