@@ -954,12 +954,12 @@ function runSearch(query) {
   const matches = [];
   allFiles.forEach(({ path, node }) => {
     const nameToCheck = matchCase ? path : path.toLowerCase();
-    const nameMatch = re ? re.test(path) : nameToCheck.includes(q);
-    // Also search stored buffer content, using full path for file ID
-    const fileId = getFileId(path);
+    const nameMatch = re ? (re.lastIndex = 0, re.test(path)) : nameToCheck.includes(q);
+    // Also search stored buffer content
+    const fileId = getFileId(node.name);
     const content = ApexState.fileBuffers?.[fileId] || '';
     const contentToCheck = matchCase ? content : content.toLowerCase();
-    const contentMatch = content && (re ? re.test(content) : contentToCheck.includes(q));
+    const contentMatch = content && (re ? (re.lastIndex = 0, re.test(content)) : contentToCheck.includes(q));
     if (nameMatch || contentMatch) {
       matches.push({ path, node, contentMatch });
     }
