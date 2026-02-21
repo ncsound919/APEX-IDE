@@ -794,7 +794,9 @@ function buildDeepCustomizationConfig() {
     fontSize: num('settings-font-size', 14),
     vimMode: !!document.getElementById('vim-mode')?.checked,
     wordWrap: !!document.getElementById('settings-word-wrap')?.checked,
-    minimap: !!document.getElementById('settings-minimap')?.checked,
+    minimap: typeof ApexState.minimapEnabled === 'boolean'
+      ? ApexState.minimapEnabled
+      : !!document.getElementById('settings-minimap')?.checked,
     autoSave: !!document.getElementById('settings-autosave')?.checked,
     autoSaveDelay: num('settings-autosave-delay', 1000),
     zenMode: !!document.getElementById('settings-zen')?.checked,
