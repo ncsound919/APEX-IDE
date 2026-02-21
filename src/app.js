@@ -953,8 +953,8 @@ function runSearch(query) {
   allFiles.forEach(({ path, node }) => {
     const nameToCheck = matchCase ? path : path.toLowerCase();
     const nameMatch = re ? re.test(path) : nameToCheck.includes(q);
-    // Also search stored buffer content
-    const fileId = getFileId(node.name);
+    // Also search stored buffer content, using full path for file ID
+    const fileId = getFileId(path);
     const content = ApexState.fileBuffers?.[fileId] || '';
     const contentToCheck = matchCase ? content : content.toLowerCase();
     const contentMatch = content && (re ? re.test(content) : contentToCheck.includes(q));
