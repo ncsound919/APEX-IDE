@@ -317,8 +317,12 @@ function showMonacoPaneFor(node) {
     const langMap = { js: 'javascript', ts: 'typescript', css: 'css', html: 'html', json: 'json', md: 'markdown', py: 'python', go: 'go' };
     const ext = node.name.split('.').pop().toLowerCase();
     const lang = langMap[ext] || 'plaintext';
+    const oldModel = ApexState.monacoEditor.getModel();
     const model = monaco.editor.createModel(`// ${node.name}\n`, lang);
     ApexState.monacoEditor.setModel(model);
+    if (oldModel && oldModel !== model) {
+      oldModel.dispose();
+    }
     document.getElementById('status-lang').textContent = lang.charAt(0).toUpperCase() + lang.slice(1);
   }
 }
