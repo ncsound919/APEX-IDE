@@ -1843,7 +1843,11 @@ function runSearch(query) {
           r.results.forEach(m => {
             const item = document.createElement('div');
             item.className = 'search-result-file';
-            item.innerHTML = `<span class="search-result-file-name">${getFileIcon(m.file)} ${m.file}</span><span class="search-content-badge">${m.total} match${m.total !== 1 ? 'es' : ''}</span>`;
+            item.innerHTML = `<span class="search-result-file-name">${getFileIcon(m.file)} </span><span class="search-content-badge">${m.total} match${m.total !== 1 ? 'es' : ''}</span>`;
+            const fileNameSpan = item.querySelector('.search-result-file-name');
+            if (fileNameSpan) {
+              fileNameSpan.appendChild(document.createTextNode(m.file));
+            }
             const matchList = document.createElement('div');
             matchList.className = 'search-result-matches';
             m.matches.forEach(({ line, text }) => {
