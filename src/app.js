@@ -1625,9 +1625,11 @@ function renderAITaskResult(text, taskType) {
   const formatted = text.includes('```')
     ? formatChatContent(text)
     : `<pre style="white-space:pre-wrap;word-break:break-word">${escHtml(text)}</pre>`;
+  const taskTypeLabel = AI_TASK_TYPES.find(t => t.id === taskType)?.label || taskType;
+  const safeTaskTypeLabel = escHtml(taskTypeLabel);
   outputEl.innerHTML = `
     <div class="ai-task-result-header">
-      <span class="ai-task-result-label">${AI_TASK_TYPES.find(t => t.id === taskType)?.label || taskType}</span>
+      <span class="ai-task-result-label">${safeTaskTypeLabel}</span>
       <button class="chat-code-btn" onclick="copyAITaskResult()">Copy</button>
       <button class="chat-code-btn insert" onclick="insertAITaskResult()">Insert to Editor</button>
     </div>
