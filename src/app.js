@@ -8,6 +8,42 @@
 const APEX_VERSION = '2.0.0';
 const MAX_IMPORT_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
+/* ─── Theme Definitions ───────────────────────────────────────────── */
+const THEMES = {
+  'hiphop-dark': {
+    '--bg-primary': '#0d0d0f', '--bg-secondary': '#141418', '--bg-tertiary': '#1c1c22',
+    '--bg-hover': '#22222a', '--bg-active': '#2a2a36', '--accent-gold': '#f5c518',
+    '--accent-pink': '#ff2d78', '--accent-cyan': '#00e5ff', '--accent-purple': '#9b59ff',
+    '--text-primary': '#f0f0f5', '--text-secondary': '#9999aa', '--text-muted': '#555566',
+    '--border': '#2a2a36', '--border-bright': '#44445a',
+    monacoTheme: 'apex-dark',
+  },
+  'midnight-blue': {
+    '--bg-primary': '#0a0e1a', '--bg-secondary': '#111827', '--bg-tertiary': '#1e293b',
+    '--bg-hover': '#253049', '--bg-active': '#334155', '--accent-gold': '#60a5fa',
+    '--accent-pink': '#f472b6', '--accent-cyan': '#22d3ee', '--accent-purple': '#a78bfa',
+    '--text-primary': '#f1f5f9', '--text-secondary': '#94a3b8', '--text-muted': '#475569',
+    '--border': '#1e293b', '--border-bright': '#334155',
+    monacoTheme: 'vs-dark',
+  },
+  'solarized-dark': {
+    '--bg-primary': '#002b36', '--bg-secondary': '#073642', '--bg-tertiary': '#0a4050',
+    '--bg-hover': '#0d4f60', '--bg-active': '#115e70', '--accent-gold': '#b58900',
+    '--accent-pink': '#d33682', '--accent-cyan': '#2aa198', '--accent-purple': '#6c71c4',
+    '--text-primary': '#fdf6e3', '--text-secondary': '#93a1a1', '--text-muted': '#586e75',
+    '--border': '#073642', '--border-bright': '#586e75',
+    monacoTheme: 'vs-dark',
+  },
+  'light': {
+    '--bg-primary': '#ffffff', '--bg-secondary': '#f5f5f5', '--bg-tertiary': '#e8e8e8',
+    '--bg-hover': '#dcdcdc', '--bg-active': '#d0d0d0', '--accent-gold': '#d97706',
+    '--accent-pink': '#db2777', '--accent-cyan': '#0891b2', '--accent-purple': '#7c3aed',
+    '--text-primary': '#1a1a1a', '--text-secondary': '#555555', '--text-muted': '#999999',
+    '--border': '#e0e0e0', '--border-bright': '#cccccc',
+    monacoTheme: 'vs',
+  },
+};
+
 function encodeBase64(str) {
   // Prefer browser btoa when available
   if (typeof btoa === 'function') {
@@ -50,6 +86,7 @@ const ApexState = {
   minimapEnabled: true,
   _codeBlockCounter: 0,
   fileBuffers: {},           // { 'file-id': 'content…' } — per-file content storage
+  fileNodes: {},             // { 'file-id': node } — maps file IDs to their tree nodes
   providers: {
     openai:    { name: 'OpenAI GPT-4o',      status: 'online',   latency: 124 },
     claude:    { name: 'Claude 3.5 Sonnet',  status: 'online',   latency: 89  },
@@ -359,13 +396,12 @@ function renderFileTree(tree = SAMPLE_TREE) {
 
 function openFileTab(node) {
   const id = getFileId(node.name);
+  ApexState.fileNodes[id] = node;
   if (!ApexState.openTabs.includes(id)) {
     ApexState.openTabs.push(id);
     addTabUI(id, node.name, getFileIcon(node.name));
   }
   activateTab(id);
-  // Show Monaco pane with correct language
-  showMonacoPaneFor(node);
 }
 
 function addTabUI(id, name, icon) {
@@ -403,7 +439,8 @@ function activateTab(id) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.file === id));
 
   // Update breadcrumb
-  const fileName = id.replace('file-', '').replace(/-/g, '.');
+  const node = ApexState.fileNodes[id];
+  const fileName = node ? node.name : id.replace('file-', '');
   const breadcrumbFile = document.getElementById('breadcrumb-file');
   const breadcrumbSep2 = document.getElementById('breadcrumb-sep2');
   if (id !== 'welcome') {
@@ -414,13 +451,17 @@ function activateTab(id) {
     if (breadcrumbSep2) breadcrumbSep2.style.display = 'none';
   }
 
-  // Show correct pane
+  // Show correct pane and load file content
   if (id === 'welcome') {
     showPane('welcome');
   } else {
-    showPane('editor');
+    if (node) {
+      showMonacoPaneFor(node);
+    } else {
+      showPane('editor');
+    }
   }
-  document.getElementById('status-file').textContent = id.replace('file-', '').replace(/-/g, '.');
+  document.getElementById('status-file').textContent = fileName;
 }
 
 function showPane(name) {
@@ -437,15 +478,19 @@ function showMonacoPaneFor(node) {
     const fileId = getFileId(node.name);
 
     // Save current buffer before switching
-    const prevTab = ApexState.activeTab;
-    if (prevTab && prevTab !== 'welcome' && prevTab !== fileId) {
-      const currentContent = ApexState.monacoEditor.getValue();
-      ApexState.fileBuffers[prevTab] = currentContent;
+    const currentModel = ApexState.monacoEditor.getModel();
+    if (currentModel && ApexState._currentFileId && ApexState._currentFileId !== fileId) {
+      ApexState.fileBuffers[ApexState._currentFileId] = ApexState.monacoEditor.getValue();
     }
 
-    // Restore saved content or use default
+    // Skip if already showing this file
+    if (ApexState._currentFileId === fileId && currentModel) {
+      return;
+    }
+
+    // Restore saved content or use language-appropriate default
     const savedContent = ApexState.fileBuffers[fileId];
-    const content = savedContent != null ? savedContent : `// ${node.name}\n`;
+    const content = savedContent != null ? savedContent : '';
 
     const oldModel = ApexState.monacoEditor.getModel();
     const model = monaco.editor.createModel(content, lang);
@@ -453,6 +498,7 @@ function showMonacoPaneFor(node) {
     if (oldModel && oldModel !== model) {
       oldModel.dispose();
     }
+    ApexState._currentFileId = fileId;
     document.getElementById('status-lang').textContent = lang.charAt(0).toUpperCase() + lang.slice(1);
   }
 }
@@ -463,6 +509,10 @@ function closeTab(e, id) {
   if (idx > -1) ApexState.openTabs.splice(idx, 1);
   const tab = document.querySelector(`.tab[data-file="${id}"]`);
   if (tab) tab.remove();
+  // Reset current file tracking so the next tab load works
+  if (ApexState._currentFileId === id) {
+    ApexState._currentFileId = null;
+  }
   // Activate previous tab
   const remaining = ApexState.openTabs;
   if (remaining.length > 0) {
@@ -907,11 +957,18 @@ function saveFile() {
   }
   const content = ApexState.monacoEditor.getValue();
   ApexState.fileBuffers[ApexState.activeTab] = content;
+  // Track saves for session stats
+  if (ApexState.session) ApexState.session.saves++;
   // Persist all buffers to localStorage
   try {
     localStorage.setItem('apex_file_buffers', JSON.stringify(ApexState.fileBuffers));
-  } catch (_) { /* storage full or unavailable */ }
-  const fileName = ApexState.activeTab.replace('file-', '').replace(/-/g, '.');
+  } catch (err) {
+    if (err && err.name === 'QuotaExceededError') {
+      showToast('Storage full — unable to persist file. Consider clearing unused files.', 'error');
+    }
+  }
+  const node = ApexState.fileNodes[ApexState.activeTab];
+  const fileName = node ? node.name : ApexState.activeTab;
   showToast(`Saved: ${fileName}`, 'success');
 }
 
@@ -2687,13 +2744,6 @@ function explainError() {
     termPrint('output', '[Settings] Session stats reset');
   };
 
-  // Track saves
-  const _origSaveFile = window.saveFile;
-  window.saveFile = function () {
-    ApexState.session.saves++;
-    return _origSaveFile?.apply(this, arguments);
-  };
-
   /* ── Auto-save ── */
   let _autoSaveTimer = null;
   ApexState.settings = ApexState.settings || {};
@@ -2909,42 +2959,6 @@ function showToast(message, type = 'info') {
   }, 3000);
 }
 
-/* ─── Theme Switching ─────────────────────────────────────────────── */
-const THEMES = {
-  'hiphop-dark': {
-    '--bg-primary': '#0d0d0f', '--bg-secondary': '#141418', '--bg-tertiary': '#1c1c22',
-    '--bg-hover': '#22222a', '--bg-active': '#2a2a36', '--accent-gold': '#f5c518',
-    '--accent-pink': '#ff2d78', '--accent-cyan': '#00e5ff', '--accent-purple': '#9b59ff',
-    '--text-primary': '#f0f0f5', '--text-secondary': '#9999aa', '--text-muted': '#555566',
-    '--border': '#2a2a36', '--border-bright': '#44445a',
-    monacoTheme: 'apex-dark',
-  },
-  'midnight-blue': {
-    '--bg-primary': '#0a0e1a', '--bg-secondary': '#111827', '--bg-tertiary': '#1e293b',
-    '--bg-hover': '#253049', '--bg-active': '#334155', '--accent-gold': '#60a5fa',
-    '--accent-pink': '#f472b6', '--accent-cyan': '#22d3ee', '--accent-purple': '#a78bfa',
-    '--text-primary': '#f1f5f9', '--text-secondary': '#94a3b8', '--text-muted': '#475569',
-    '--border': '#1e293b', '--border-bright': '#334155',
-    monacoTheme: 'vs-dark',
-  },
-  'solarized-dark': {
-    '--bg-primary': '#002b36', '--bg-secondary': '#073642', '--bg-tertiary': '#0a4050',
-    '--bg-hover': '#0d4f60', '--bg-active': '#115e70', '--accent-gold': '#b58900',
-    '--accent-pink': '#d33682', '--accent-cyan': '#2aa198', '--accent-purple': '#6c71c4',
-    '--text-primary': '#fdf6e3', '--text-secondary': '#93a1a1', '--text-muted': '#586e75',
-    '--border': '#073642', '--border-bright': '#586e75',
-    monacoTheme: 'vs-dark',
-  },
-  'light': {
-    '--bg-primary': '#ffffff', '--bg-secondary': '#f5f5f5', '--bg-tertiary': '#e8e8e8',
-    '--bg-hover': '#dcdcdc', '--bg-active': '#d0d0d0', '--accent-gold': '#d97706',
-    '--accent-pink': '#db2777', '--accent-cyan': '#0891b2', '--accent-purple': '#7c3aed',
-    '--text-primary': '#1a1a1a', '--text-secondary': '#555555', '--text-muted': '#999999',
-    '--border': '#e0e0e0', '--border-bright': '#cccccc',
-    monacoTheme: 'vs',
-  },
-};
-
 /* ─── Global Hotkeys ──────────────────────────────────────────────── */
 document.addEventListener('keydown', e => {
   const ctrl = e.ctrlKey || e.metaKey;
@@ -3082,10 +3096,10 @@ window.addEventListener('DOMContentLoaded', () => {
     const files = e.dataTransfer?.files;
     if (!files || files.length === 0) return;
 
-    let importedCount = 0;
     Array.from(files).forEach(file => {
       // Skip binary/large files
       if (file.size > MAX_IMPORT_FILE_SIZE) { showToast(`Skipped ${file.name} (too large)`, 'warn'); return; }
+      // Check for duplicate names against both files and folders
       const exists = SAMPLE_TREE.some(n => n.name === file.name);
       if (exists) { showToast(`${file.name} already exists`, 'warn'); return; }
 
@@ -3095,9 +3109,12 @@ window.addEventListener('DOMContentLoaded', () => {
         SAMPLE_TREE.push(node);
         const fileId = getFileId(file.name);
         ApexState.fileBuffers[fileId] = reader.result;
+        ApexState.fileNodes[fileId] = node;
         renderFileTree();
-        importedCount++;
         showToast(`Imported: ${file.name}`, 'success');
+      };
+      reader.onerror = () => {
+        showToast(`Failed to read: ${file.name}`, 'error');
       };
       reader.readAsText(file);
     });
