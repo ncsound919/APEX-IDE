@@ -135,6 +135,8 @@
         <button class="activity-btn" data-panel="llm-router" onclick="switchActivity('llm-router',this)" title="LLM Router">🧠</button>
         <button class="activity-btn" data-panel="ide-bridge" onclick="switchActivity('ide-bridge',this)" title="IDE Bridge">⚡</button>
         <button class="activity-btn" data-panel="domains" onclick="switchActivity('domains',this)" title="Domain Adapters">🎛️</button>
+        <button class="activity-btn" data-panel="cli" onclick="switchActivity('cli',this)" title="CLI Runner">💻</button>
+        <button class="activity-btn" data-panel="mcp" onclick="switchActivity('mcp',this)" title="MCP Servers">🔌</button>
         <div class="activity-spacer"></div>
         <button class="activity-btn" data-panel="settings" onclick="switchActivity('settings',this)" title="Settings">⚙️</button>
       </aside>
@@ -356,6 +358,93 @@
           </div>
         </div>
 
+        <!-- CLI Runner Panel -->
+        <div class="panel" id="panel-cli">
+          <div class="panel-header"><span>CLI RUNNER</span></div>
+          <div class="cli-panel">
+            <div class="cli-section">
+              <div class="section-label">FRONTEND QUICK COMMANDS</div>
+              <button class="cli-quick-btn" onclick="runCLICommand('npm install')">📦 npm install</button>
+              <button class="cli-quick-btn" onclick="runCLICommand('npm run dev')">🚀 npm run dev</button>
+              <button class="cli-quick-btn" onclick="runCLICommand('npm run build')">🔨 npm run build</button>
+              <button class="cli-quick-btn" onclick="runCLICommand('npm run test')">✅ npm run test</button>
+              <button class="cli-quick-btn" onclick="runCLICommand('npm run lint')">🔍 npm run lint</button>
+              <button class="cli-quick-btn" onclick="runCLICommand('npx vite')">⚡ npx vite</button>
+              <button class="cli-quick-btn" onclick="runCLICommand('npx create-react-app .')">⚛️ create-react-app</button>
+              <button class="cli-quick-btn" onclick="runCLICommand('npx create-next-app .')">▲ create-next-app</button>
+            </div>
+            <div class="cli-section">
+              <div class="section-label">CUSTOM COMMAND</div>
+              <div class="cli-input-row">
+                <input type="text" class="cli-input" id="cli-custom-input"
+                       placeholder="Enter CLI command…"
+                       autocomplete="off" spellcheck="false"
+                       onkeydown="handleCLIKey(event)" />
+                <button class="cli-run-btn" onclick="submitCLIInput()">▶</button>
+              </div>
+            </div>
+            <div class="cli-section">
+              <div class="section-label">OUTPUT <button class="cli-clear-btn" onclick="clearCLIOutput()">Clear</button></div>
+              <div class="cli-output" id="cli-output">
+                <div class="cli-line info">CLI Runner ready. Select a quick command or type below.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MCP Servers Panel -->
+        <div class="panel" id="panel-mcp">
+          <div class="panel-header"><span>MCP SERVERS</span></div>
+          <div class="mcp-panel">
+            <div class="mcp-section">
+              <div class="section-label">CONNECTED SERVERS</div>
+              <div class="mcp-server-list" id="mcp-server-list">
+              </div>
+            </div>
+            <div class="mcp-section">
+              <div class="section-label">ADD SERVER</div>
+              <div class="mcp-add-form">
+                <input type="text" class="mcp-input" id="mcp-server-name" placeholder="Server name…" />
+                <input type="text" class="mcp-input" id="mcp-server-cmd" placeholder="Command or URL…" />
+                <button class="btn-primary mcp-add-btn" onclick="addMCPServer()">+ Add Server</button>
+              </div>
+            </div>
+            <div class="mcp-section">
+              <div class="section-label">AVAILABLE TOOLS</div>
+              <div class="mcp-tools-list" id="mcp-tools-list">
+                <div class="mcp-tool-item" role="button" tabindex="0" onclick="invokeMCPTool('read_file')"
+                     onkeypress="if(event.key==='Enter'||event.key===' '){event.preventDefault();invokeMCPTool('read_file')}">
+                  <span class="mcp-tool-icon">📖</span>
+                  <div class="mcp-tool-info">
+                    <div class="mcp-tool-name">read_file</div>
+                    <div class="mcp-tool-desc">Read contents of a file</div>
+                  </div>
+                </div>
+                <div class="mcp-tool-item" role="button" tabindex="0" onclick="invokeMCPTool('write_file')"
+                     onkeypress="if(event.key==='Enter'||event.key===' '){event.preventDefault();invokeMCPTool('write_file')}">
+                  <span class="mcp-tool-icon">✏️</span>
+                  <div class="mcp-tool-info">
+                    <div class="mcp-tool-name">write_file</div>
+                    <div class="mcp-tool-desc">Write content to a file</div>
+                  </div>
+                </div>
+                <div class="mcp-tool-item" role="button" tabindex="0" onclick="invokeMCPTool('list_directory')"
+                     onkeypress="if(event.key==='Enter'||event.key===' '){event.preventDefault();invokeMCPTool('list_directory')}">
+                  <span class="mcp-tool-icon">📂</span>
+                  <div class="mcp-tool-info">
+                    <div class="mcp-tool-name">list_directory</div>
+                    <div class="mcp-tool-desc">List files in a directory</div>
+                  </div>
+                </div>
+                <div class="mcp-tool-item" role="button" tabindex="0" onclick="invokeMCPTool('search_files')"
+                     onkeypress="if(event.key==='Enter'||event.key===' '){event.preventDefault();invokeMCPTool('search_files')}">
+                  <span class="mcp-tool-icon">🔍</span>
+                  <div class="mcp-tool-info">
+                    <div class="mcp-tool-name">search_files</div>
+                    <div class="mcp-tool-desc">Search across project files</div>
+                  </div>
+                </div>
+              </div>
         <!-- AI Chat Panel -->
         <div class="panel" id="panel-chat">
           <div class="panel-header">
@@ -496,6 +585,10 @@
             <span class="tab-name">Welcome</span>
             <button class="tab-close" onclick="closeTab(event,'welcome')">×</button>
           </div>
+          <div class="tab" data-file="visualizer" onclick="openVisualizerTab()">
+            <span class="tab-icon">🖥️</span>
+            <span class="tab-name">Visualizer</span>
+          </div>
           <button class="tab-add" onclick="newFile()" title="New File">+</button>
         </div>
 
@@ -602,6 +695,32 @@
           <!-- Monaco Editor Tab (for code files) -->
           <div class="editor-pane" id="pane-editor">
             <div id="monaco-container" style="width:100%;height:100%;"></div>
+          </div>
+          <!-- Frontend Visualizer Pane -->
+          <div class="editor-pane" id="pane-visualizer">
+            <div class="visualizer-toolbar">
+              <span class="visualizer-label">🖥️ FRONTEND VISUALIZER</span>
+              <div class="visualizer-viewport-btns">
+                <button class="viz-btn active" onclick="setVizViewport('desktop',this)" title="Desktop">🖥️ Desktop</button>
+                <button class="viz-btn" onclick="setVizViewport('tablet',this)" title="Tablet">📱 Tablet</button>
+                <button class="viz-btn" onclick="setVizViewport('mobile',this)" title="Mobile">📲 Mobile</button>
+              </div>
+              <div class="visualizer-url-row">
+                <input type="text" class="visualizer-url" id="visualizer-url" value="about:blank" placeholder="Enter URL or HTML to preview…" />
+                <button class="viz-btn" onclick="loadVisualizerURL()" title="Load URL">▶ Load</button>
+                <button class="viz-btn" onclick="refreshVisualizer()" title="Refresh">↻ Refresh</button>
+              </div>
+              <div class="visualizer-html-row">
+                <textarea class="visualizer-html-input" id="visualizer-html-input"
+                          placeholder="Paste HTML snippet to preview…" rows="3"></textarea>
+                <button class="viz-btn" onclick="previewHTML()" title="Preview HTML">👁 Preview HTML</button>
+              </div>
+            </div>
+            <div class="visualizer-frame-wrap" id="visualizer-frame-wrap">
+              <iframe class="visualizer-iframe" id="visualizer-iframe"
+                      sandbox="allow-scripts"
+                      title="Frontend Preview"></iframe>
+            </div>
           </div>
         </div>
       </main>
