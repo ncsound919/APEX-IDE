@@ -615,8 +615,10 @@ function runTool(tool) {
   const msg = msgs[tool] || `[Tool] Running: ${tool}`;
   termPrint('output', msg);
   // Open terminal tab to show output
-  switchBottomTab('terminal', document.querySelector('.bottom-tab'));
-  document.querySelector('.bottom-tab').classList.add('active');
+  const terminalTabBtn =
+    document.querySelector('.bottom-tab[data-tab="terminal"]') ||
+    document.querySelector('.bottom-tab');
+  switchBottomTab('terminal', terminalTabBtn);
 }
 
 /* ─── Bridges ─────────────────────────────────────────────────────── */
