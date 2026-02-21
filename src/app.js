@@ -222,7 +222,7 @@ function loadMonaco() {
         fontSize: 14,
         fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
         fontLigatures: true,
-        minimap: { enabled: true },
+        minimap: { enabled: ApexState.minimapEnabled },
         wordWrap: 'on',
         scrollBeyondLastLine: false,
         renderWhitespace: 'selection',
@@ -1178,7 +1178,12 @@ async function callLLMAPI(history, model, systemPrompt) {
       throw new Error(err.error?.message || `OpenAI API error ${res.status}`);
     }
     const data = await res.json();
-    return data.choices[0].message.content;
+    const firstChoice = Array.isArray(data.choices) && data.choices.length > 0 ? data.choices[0] : null;
+    const content = firstChoice?.message?.content;
+    if (typeof content !== 'string') {
+      throw new Error('OpenAI API returned an unexpected response without choices content.');
+    }
+    return content;
   }
 
   // Anthropic / Claude models
