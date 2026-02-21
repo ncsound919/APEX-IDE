@@ -21,6 +21,8 @@ const ApexState = {
   vibeScores: { confidence: 82, intent: 71 },
   commandList: [],
   monacoEditor: null,
+  minimapEnabled: true,
+  _codeBlockCounter: 0,
   providers: {
     openai:    { name: 'OpenAI GPT-4o',      status: 'online',   latency: 124 },
     claude:    { name: 'Claude 3.5 Sonnet',  status: 'online',   latency: 89  },
@@ -36,6 +38,9 @@ const ApexState = {
   ],
   cliHistory: [],
   cliHistoryIdx: -1,
+  // Chat state
+  chatHistory: [],          // [{role:'user'|'assistant', content:'…'}]
+  chatLoading: false,
 };
 
 /* ─── Sample File Tree ───────────────────────────────────────────── */
@@ -78,6 +83,19 @@ const COMMANDS = [
   { icon: '🔌', label: 'Open MCP Servers',         shortcut: 'Ctrl+Shift+M',  fn: () => switchActivity('mcp') },
   { icon: '🖥️', label: 'Open Frontend Visualizer', shortcut: 'Ctrl+Shift+V',  fn: () => openVisualizerTab()   },
   { icon: '🔄', label: 'Restart IDE',             shortcut: '',              fn: () => location.reload()     },
+  // Chat & AI
+  { icon: '💬', label: 'Open AI Chat',            shortcut: 'Ctrl+Shift+J',  fn: () => switchActivity('chat') },
+  { icon: '📖', label: 'AI: Explain Code',        shortcut: 'Alt+E',         fn: () => aiAction('explain')   },
+  { icon: '♻️', label: 'AI: Refactor Code',       shortcut: 'Alt+R',         fn: () => aiAction('refactor')  },
+  { icon: '🧪', label: 'AI: Write Tests',         shortcut: 'Alt+T',         fn: () => aiAction('tests')     },
+  { icon: '🔧', label: 'AI: Fix Errors',          shortcut: 'Alt+F',         fn: () => aiAction('fix')       },
+  { icon: '📝', label: 'AI: Add Documentation',   shortcut: '',              fn: () => aiAction('docs')      },
+  { icon: '⚡', label: 'AI: Optimize Code',       shortcut: '',              fn: () => aiAction('optimize')  },
+  // Editor utilities
+  { icon: '✏️', label: 'Format Document',          shortcut: 'Shift+Alt+F',   fn: () => formatDocument()      },
+  { icon: '🔢', label: 'Go to Line',              shortcut: 'Ctrl+G',        fn: () => goToLine()            },
+  { icon: '🗺️', label: 'Toggle Minimap',           shortcut: '',              fn: () => toggleMinimap()       },
+  { icon: '🗑️', label: 'Clear Chat',              shortcut: '',              fn: () => clearChat()           },
 ];
 
 /* ─── File Icons ─────────────────────────────────────────────────── */
@@ -150,7 +168,12 @@ function initApp() {
   initVibeScoreUpdater();
   initAudioVisualizer();
   applyProjectTheme();
+  initChat();
   loadMonaco();
+
+  // Update breadcrumb project name
+  const breadcrumbProject = document.getElementById('breadcrumb-project');
+  if (breadcrumbProject) breadcrumbProject.textContent = ApexState.projectName || 'Project';
 
   // Apply domain adapter based on project type
   if (ApexState.projectType !== 'general') {
@@ -209,7 +232,7 @@ function loadMonaco() {
         fontSize: 14,
         fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
         fontLigatures: true,
-        minimap: { enabled: true },
+        minimap: { enabled: ApexState.minimapEnabled },
         wordWrap: 'on',
         scrollBeyondLastLine: false,
         renderWhitespace: 'selection',
@@ -219,8 +242,21 @@ function loadMonaco() {
         lineNumbers: 'on',
         glyphMargin: true,
         folding: true,
+        suggestOnTriggerCharacters: true,
+        quickSuggestions: true,
+        parameterHints: { enabled: true },
+        formatOnPaste: true,
+        multiCursorModifier: 'ctrlCmd',
+        bracketPairColorization: { enabled: true },
+        guides: { bracketPairs: true },
       }
     );
+
+    // Live cursor position in status bar
+    ApexState.monacoEditor.onDidChangeCursorPosition(e => {
+      const cursor = document.getElementById('status-cursor');
+      if (cursor) cursor.textContent = `Ln ${e.position.lineNumber}, Col ${e.position.column}`;
+    });
 
     log('[INFO] Monaco editor loaded ✓');
   });
@@ -307,6 +343,18 @@ function activateTab(id) {
   ApexState.activeTab = id;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.file === id));
 
+  // Update breadcrumb
+  const fileName = id.replace('file-', '').replace(/-/g, '.');
+  const breadcrumbFile = document.getElementById('breadcrumb-file');
+  const breadcrumbSep2 = document.getElementById('breadcrumb-sep2');
+  if (id !== 'welcome') {
+    if (breadcrumbFile) { breadcrumbFile.textContent = fileName; breadcrumbFile.style.display = ''; }
+    if (breadcrumbSep2) breadcrumbSep2.style.display = '';
+  } else {
+    if (breadcrumbFile) breadcrumbFile.style.display = 'none';
+    if (breadcrumbSep2) breadcrumbSep2.style.display = 'none';
+  }
+
   // Show correct pane
   if (id === 'welcome') {
     showPane('welcome');
@@ -361,6 +409,9 @@ function switchActivity(name, btn) {
   if (panel) panel.classList.add('active');
 
   ApexState.activePanel = name;
+
+  // Populate API keys when settings opens
+  if (name === 'settings') populateSettingsKeys();
 }
 
 /* ─── Right Panels ────────────────────────────────────────────────── */
@@ -708,6 +759,35 @@ function toggleVimModeCmd() {
   if (cb) { cb.checked = !cb.checked; toggleVimMode(cb.checked); }
 }
 
+function updateApiKey(provider, value) {
+  if (provider === 'ollama') {
+    ApexState.keys.ollama = value;
+  } else {
+    ApexState.keys[provider] = value;
+  }
+  // Persist to localStorage
+  const saved = localStorage.getItem('apex_state');
+  let state = {};
+  try { state = JSON.parse(saved) || {}; } catch (_) {}
+  if (!state.keys) state.keys = {};
+  state.keys[provider] = value;
+  localStorage.setItem('apex_state', JSON.stringify(state));
+  termPrint('output', `[Settings] API key updated: ${provider}`);
+}
+
+function populateSettingsKeys() {
+  const fields = [
+    ['settings-key-openai', ApexState.keys.openai],
+    ['settings-key-anthropic', ApexState.keys.anthropic],
+    ['settings-key-deepseek', ApexState.keys.deepseek],
+    ['settings-key-ollama', ApexState.keys.ollama],
+  ];
+  fields.forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (el && val) el.value = val;
+  });
+}
+
 /* ─── Project Theme ───────────────────────────────────────────────── */
 function applyProjectTheme() {
   const themes = {
@@ -1040,6 +1120,399 @@ function previewHTML() {
   document.getElementById('visualizer-url').value = '';
   document.getElementById('visualizer-url').placeholder = '(HTML preview active)';
   termPrint('output', '[Visualizer] Previewing HTML snippet');
+// Alias used by the welcome tab onclick
+function openTab(id) { activateTab(id); }
+
+/* ─── Editor Utilities ────────────────────────────────────────────── */
+function formatDocument() {
+  if (ApexState.monacoEditor) {
+    ApexState.monacoEditor.getAction('editor.action.formatDocument')?.run();
+    log('[INFO] Document formatted');
+  } else {
+    termPrint('warn', '[Editor] Monaco not loaded yet');
+  }
+}
+
+function goToLine() {
+  if (ApexState.monacoEditor) {
+    ApexState.monacoEditor.getAction('editor.action.gotoLine')?.run();
+  } else {
+    const line = prompt('Go to line:');
+    if (line && !isNaN(line)) termPrint('output', `[Editor] Go to line ${line}`);
+  }
+}
+
+function toggleMinimap() {
+  if (ApexState.monacoEditor) {
+    ApexState.minimapEnabled = !ApexState.minimapEnabled;
+    ApexState.monacoEditor.updateOptions({ minimap: { enabled: ApexState.minimapEnabled } });
+    // Persist preference
+    try {
+      const state = JSON.parse(localStorage.getItem('apex_state') || '{}');
+      state.minimapEnabled = ApexState.minimapEnabled;
+      localStorage.setItem('apex_state', JSON.stringify(state));
+    } catch (_) {}
+    termPrint('output', `[Editor] Minimap: ${ApexState.minimapEnabled ? 'ON' : 'OFF'}`);
+  }
+}
+
+function getEditorSelection() {
+  if (!ApexState.monacoEditor) return '';
+  const selection = ApexState.monacoEditor.getSelection();
+  if (!selection || selection.isEmpty()) {
+    // Return full file content if nothing selected
+    return ApexState.monacoEditor.getValue();
+  }
+  return ApexState.monacoEditor.getModel()?.getValueInRange(selection) || '';
+}
+
+/* ═══════════════ AI CHAT ════════════════════════════════════════════ */
+
+function initChat() {
+  const saved = localStorage.getItem('apex_chat_history');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        ApexState.chatHistory = parsed;
+        // Restore rendered messages
+        parsed.forEach(msg => renderChatBubble(msg.role, msg.content));
+      }
+    } catch (_) { /* ignore */ }
+  }
+}
+
+function saveChatHistory() {
+  try {
+    localStorage.setItem('apex_chat_history', JSON.stringify(ApexState.chatHistory));
+  } catch (_) { /* ignore */ }
+}
+
+function clearChat() {
+  ApexState.chatHistory = [];
+  localStorage.removeItem('apex_chat_history');
+  const messages = document.getElementById('chat-messages');
+  if (messages) {
+    messages.innerHTML = `
+      <div class="chat-welcome">
+        <div class="chat-welcome-icon">🧠</div>
+        <div class="chat-welcome-title">APEX AI</div>
+        <div class="chat-welcome-text">Ask about your code. Select text in the editor and use the actions below for context-aware help.</div>
+        <div class="chat-quick-actions">
+          <button class="chat-quick-btn" onclick="aiAction('explain')">📖 Explain Code</button>
+          <button class="chat-quick-btn" onclick="aiAction('refactor')">♻️ Refactor</button>
+          <button class="chat-quick-btn" onclick="aiAction('tests')">🧪 Write Tests</button>
+          <button class="chat-quick-btn" onclick="aiAction('fix')">🔧 Fix Errors</button>
+          <button class="chat-quick-btn" onclick="aiAction('docs')">📝 Add Docs</button>
+          <button class="chat-quick-btn" onclick="aiAction('optimize')">⚡ Optimize</button>
+        </div>
+      </div>`;
+  }
+  termPrint('output', '[Chat] Conversation cleared');
+}
+
+function toggleSystemPrompt() {
+  const area = document.getElementById('chat-system-prompt-area');
+  if (area) area.classList.toggle('hidden');
+}
+
+function handleChatKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChatMessage();
+  }
+}
+
+function sendChatMessage(overrideContent) {
+  if (ApexState.chatLoading) return;
+  const input = document.getElementById('chat-input');
+  const content = overrideContent || (input ? input.value.trim() : '');
+  if (!content) return;
+  if (input && !overrideContent) input.value = '';
+
+  // Switch to chat panel
+  switchActivity('chat');
+
+  // Remove welcome screen if present
+  const welcome = document.querySelector('.chat-welcome');
+  if (welcome) welcome.remove();
+
+  // Render user message
+  renderChatBubble('user', content);
+  ApexState.chatHistory.push({ role: 'user', content });
+
+  // Show loading
+  const loadingEl = showChatLoading();
+
+  // Call LLM
+  const model = document.getElementById('chat-model-select')?.value || 'gpt-4o';
+  const systemInput = document.getElementById('chat-system-input');
+  const systemPrompt = systemInput ? systemInput.value.trim() : '';
+
+  callLLMAPI(ApexState.chatHistory, model, systemPrompt)
+    .then(reply => {
+      loadingEl.remove();
+      renderChatBubble('assistant', reply);
+      ApexState.chatHistory.push({ role: 'assistant', content: reply });
+      saveChatHistory();
+    })
+    .catch(err => {
+      loadingEl.remove();
+      const errMsg = `Error: ${err.message || 'Could not reach AI provider. Check your API keys in Settings.'}`;
+      renderChatBubble('assistant', errMsg);
+      ApexState.chatHistory.push({ role: 'assistant', content: errMsg });
+      saveChatHistory();
+    })
+    .finally(() => {
+      ApexState.chatLoading = false;
+      const sendBtn = document.getElementById('chat-send-btn');
+      if (sendBtn) sendBtn.disabled = false;
+    });
+
+  ApexState.chatLoading = true;
+  const sendBtn = document.getElementById('chat-send-btn');
+  if (sendBtn) sendBtn.disabled = true;
+}
+
+function showChatLoading() {
+  const messages = document.getElementById('chat-messages');
+  const el = document.createElement('div');
+  el.className = 'chat-loading';
+  el.innerHTML = `
+    <span>🧠</span>
+    <div class="chat-loading-dots"><span></span><span></span><span></span></div>
+    <span style="font-size:11px;color:var(--text-muted)">Thinking…</span>`;
+  messages.appendChild(el);
+  messages.scrollTop = messages.scrollHeight;
+  return el;
+}
+
+function renderChatBubble(role, content) {
+  const messages = document.getElementById('chat-messages');
+  if (!messages) return;
+
+  // Constrain role to expected values to avoid CSS class injection
+  const safeRole = role === 'user' ? 'user' : 'assistant';
+
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const avatar = safeRole === 'user' ? '👤' : '🧠';
+  const roleLabel = safeRole === 'user' ? 'YOU' : 'APEX AI';
+
+  const msgEl = document.createElement('div');
+  msgEl.className = `chat-message ${safeRole} fade-in`;
+
+  const header = `
+    <div class="chat-msg-header">
+      <span class="chat-msg-avatar">${avatar}</span>
+      <span class="chat-msg-role ${safeRole}">${roleLabel}</span>
+      <span class="chat-msg-time">${time}</span>
+    </div>`;
+
+  const formattedContent = formatChatContent(content);
+  msgEl.innerHTML = header + `<div class="chat-msg-content">${formattedContent}</div>`;
+  messages.appendChild(msgEl);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function formatChatContent(text) {
+  // Escape HTML first
+  const escapeHtml = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  // Process code blocks
+  const parts = text.split(/(```[\s\S]*?```)/g);
+  return parts.map(part => {
+    if (part.startsWith('```')) {
+      const lines = part.slice(3, -3).split('\n');
+      const lang = lines[0].trim() || 'code';
+      const code = escapeHtml(lines.slice(1).join('\n').trim());
+      const blockId = 'cb-' + (++ApexState._codeBlockCounter);
+      return `<div class="chat-code-block" id="${blockId}">
+        <div class="chat-code-header">
+          <span class="chat-code-lang">${escapeHtml(lang)}</span>
+          <div class="chat-code-actions">
+            <button class="chat-code-btn" onclick="copyChatCode('${blockId}')">Copy</button>
+            <button class="chat-code-btn insert" onclick="insertChatCode('${blockId}')">Insert</button>
+          </div>
+        </div>
+        <pre class="chat-code-pre" data-code="${blockId}">${code}</pre>
+      </div>`;
+    }
+    // Inline code
+    const escaped = escapeHtml(part)
+      .replace(/`([^`]+)`/g, '<code style="font-family:var(--font-code);color:var(--accent-cyan);background:var(--bg-tertiary);padding:1px 4px;border-radius:3px">$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/\n/g, '<br>');
+    return `<p>${escaped}</p>`;
+  }).join('');
+}
+
+function copyChatCode(blockId) {
+  const pre = document.querySelector(`#${blockId} pre`);
+  if (!pre) return;
+  navigator.clipboard.writeText(pre.textContent).then(() => {
+    const btn = document.querySelector(`#${blockId} .chat-code-btn`);
+    if (btn) { const orig = btn.textContent; btn.textContent = '✓ Copied'; setTimeout(() => { btn.textContent = orig; }, 1500); }
+  }).catch(() => termPrint('warn', '[Chat] Could not copy to clipboard'));
+}
+
+function insertChatCode(blockId) {
+  const pre = document.querySelector(`#${blockId} pre`);
+  if (!pre) return;
+  const code = pre.textContent;
+  if (ApexState.monacoEditor) {
+    const editor = ApexState.monacoEditor;
+    const selection = editor.getSelection();
+    const id = { major: 1, minor: 1 };
+    const op = { identifier: id, range: selection, text: code, forceMoveMarkers: true };
+    editor.executeEdits('chat-insert', [op]);
+    showPane('editor');
+    editor.focus();
+    termPrint('output', '[Chat] Code inserted into editor ✓');
+  } else {
+    termPrint('warn', '[Chat] Editor not ready — Monaco not loaded');
+  }
+}
+
+async function callLLMAPI(history, model, systemPrompt) {
+  const { openai, anthropic, deepseek, ollama } = ApexState.keys;
+
+  const messages = systemPrompt
+    ? [{ role: 'system', content: systemPrompt }, ...history]
+    : history;
+
+  // OpenAI models
+  if (model.startsWith('gpt') || model.startsWith('o1') || model.startsWith('o3')) {
+    if (!openai) throw new Error('OpenAI API key not set. Add it in Settings > API Keys.');
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openai}` },
+      body: JSON.stringify({ model, messages, max_tokens: 4096 }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `OpenAI API error ${res.status}`);
+    }
+    const data = await res.json();
+    const firstChoice = Array.isArray(data.choices) && data.choices.length > 0 ? data.choices[0] : null;
+    const content = firstChoice?.message?.content;
+    if (typeof content !== 'string') {
+      throw new Error('OpenAI API returned an unexpected response without choices content.');
+    }
+    return content;
+  }
+
+  // Anthropic / Claude models
+  if (model.startsWith('claude')) {
+    if (!anthropic) throw new Error('Anthropic API key not set. Add it in Settings > API Keys.');
+    // Anthropic requires system prompt as separate field
+    const body = { model, messages: history, max_tokens: 4096 };
+    if (systemPrompt) body.system = systemPrompt;
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropic,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `Anthropic API error ${res.status}`);
+    }
+    const data = await res.json();
+    const firstContentItem = Array.isArray(data.content) && data.content.length > 0 ? data.content[0] : null;
+    if (!firstContentItem || typeof firstContentItem.text !== 'string') {
+      throw new Error('Anthropic API returned unexpected response structure');
+    }
+    return firstContentItem.text;
+  }
+
+  // DeepSeek (OpenAI-compatible)
+  if (model.startsWith('deepseek')) {
+    if (!deepseek) throw new Error('DeepSeek API key not set. Add it in Settings > API Keys.');
+    const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${deepseek}` },
+      body: JSON.stringify({ model, messages, max_tokens: 4096 }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `DeepSeek API error ${res.status}`);
+    }
+    const data = await res.json();
+    const firstChoice = Array.isArray(data.choices) && data.choices.length > 0 ? data.choices[0] : null;
+    const content = firstChoice?.message?.content;
+    if (typeof content !== 'string') {
+      throw new Error('DeepSeek API returned an unexpected response without choices content.');
+    }
+    return content;
+  }
+
+  // Ollama (local)
+  const endpoint = (ollama || 'http://localhost:11434').replace(/\/$/, '');
+  const res = await fetch(`${endpoint}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, messages, stream: false }),
+  }).catch((error) => {
+    // Preserve original network error information for debugging
+    console.error('Ollama fetch failed:', error);
+    const originalMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Ollama not reachable at ${endpoint}. Run: ollama serve. Original error: ${originalMessage}`);
+  });
+  if (!res.ok) throw new Error(`Ollama error ${res.status}`);
+  const data = await res.json();
+  return data.message?.content || data.response || '';
+}
+
+/* ─── AI Code Actions ─────────────────────────────────────────────── */
+const AI_ACTION_PROMPTS = {
+  explain:  (code, lang) => `Explain the following ${lang} code clearly and concisely:\n\`\`\`${lang}\n${code}\n\`\`\``,
+  refactor: (code, lang) => `Refactor the following ${lang} code for better readability, performance, and maintainability. Explain key changes:\n\`\`\`${lang}\n${code}\n\`\`\``,
+  tests:    (code, lang) => `Write comprehensive unit tests for the following ${lang} code using the most common testing framework for that language:\n\`\`\`${lang}\n${code}\n\`\`\``,
+  fix:      (code, lang) => `Find and fix all bugs, errors, and issues in the following ${lang} code. Explain each fix:\n\`\`\`${lang}\n${code}\n\`\`\``,
+  docs:     (code, lang) => `Add comprehensive JSDoc/docstring documentation to the following ${lang} code:\n\`\`\`${lang}\n${code}\n\`\`\``,
+  optimize: (code, lang) => `Optimize the following ${lang} code for performance and efficiency. Explain the optimizations:\n\`\`\`${lang}\n${code}\n\`\`\``,
+};
+
+function aiAction(action) {
+  const code = getEditorSelection();
+  if (!code.trim()) {
+    termPrint('warn', '[AI] No code selected — open a file or select code first');
+    return;
+  }
+  const lang = document.getElementById('status-lang')?.textContent?.toLowerCase() || 'javascript';
+  const promptFn = AI_ACTION_PROMPTS[action];
+  if (!promptFn) return;
+  const prompt = promptFn(code, lang);
+  sendChatMessage(prompt);
+  log(`[AI] Action: ${action} on ${lang} code (${code.split('\n').length} lines)`);
+}
+
+function askAboutCode() {
+  const code = getEditorSelection();
+  if (!code.trim()) {
+    termPrint('warn', '[AI] Select code in the editor first');
+    return;
+  }
+  const lang = document.getElementById('status-lang')?.textContent?.toLowerCase() || 'javascript';
+  const chatInput = document.getElementById('chat-input');
+  if (chatInput) chatInput.value = `\`\`\`${lang}\n${code}\n\`\`\`\n\n`;
+  switchActivity('chat');
+  chatInput?.focus();
+}
+
+function explainError() {
+  const errors = document.querySelectorAll('.problem-item.error .problem-msg');
+  if (errors.length === 0) {
+    termPrint('warn', '[AI] No errors found in the Problems panel');
+    return;
+  }
+  const errorList = Array.from(errors).map(e => e.textContent).join('\n');
+  sendChatMessage(`Explain these errors and how to fix them:\n${errorList}`);
 }
 
 /* ─── Global Hotkeys ──────────────────────────────────────────────── */
@@ -1055,7 +1528,18 @@ document.addEventListener('keydown', e => {
   if (ctrl && e.shiftKey && e.key === 'C') { e.preventDefault(); switchActivity('cli'); return; }
   if (ctrl && e.shiftKey && e.key === 'M') { e.preventDefault(); switchActivity('mcp'); return; }
   if (ctrl && e.shiftKey && e.key === 'V') { e.preventDefault(); openVisualizerTab(); return; }
+  if (ctrl && e.shiftKey && e.key === 'J') { e.preventDefault(); switchActivity('chat'); return; }
   if (ctrl && e.key === 's') { e.preventDefault(); saveFile(); return; }
+  if (ctrl && e.key === 'g') { e.preventDefault(); goToLine(); return; }
+  if (e.altKey && e.shiftKey && e.key === 'F') { e.preventDefault(); formatDocument(); return; }
+  // AI action shortcuts (only when not typing in an input/textarea)
+  const tag = document.activeElement?.tagName;
+  if (e.altKey && !e.ctrlKey && !e.shiftKey && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+    if (e.key === 'e' || e.key === 'E') { e.preventDefault(); aiAction('explain'); return; }
+    if (e.key === 'r' || e.key === 'R') { e.preventDefault(); aiAction('refactor'); return; }
+    if (e.key === 't' || e.key === 'T') { e.preventDefault(); aiAction('tests'); return; }
+    if (e.key === 'f' || e.key === 'F') { e.preventDefault(); aiAction('fix'); return; }
+  }
   if (e.key === 'Escape') { closeCommandPalette(); return; }
 });
 
@@ -1089,18 +1573,22 @@ window.addEventListener('DOMContentLoaded', () => {
         if (Array.isArray(s.terminalHistory)) {
           ApexState.terminalHistory = s.terminalHistory;
         }
+        if (typeof s.minimapEnabled === 'boolean') {
+          ApexState.minimapEnabled = s.minimapEnabled;
+        }
+        // Restore all API keys from nested keys object
+        if (s.keys && typeof s.keys === 'object') {
+          if (!ApexState.keys) ApexState.keys = {};
+          ['openai', 'anthropic', 'deepseek', 'ollama'].forEach(k => {
+            if (s.keys[k] != null) ApexState.keys[k] = s.keys[k];
+          });
+        }
         // Restore ollama endpoint: persisted as top-level `ollama`, used as `keys.ollama`
         if (s.ollama != null) {
           if (!ApexState.keys || typeof ApexState.keys !== 'object') {
             ApexState.keys = {};
           }
           ApexState.keys.ollama = s.ollama;
-        } else if (s.keys && s.keys.ollama != null) {
-          // Also handle case where it was already nested under keys
-          if (!ApexState.keys || typeof ApexState.keys !== 'object') {
-            ApexState.keys = {};
-          }
-          ApexState.keys.ollama = s.keys.ollama;
         }
       }
     } catch (_) { /* ignore */ }
