@@ -140,6 +140,10 @@
         <button class="activity-btn" data-panel="mcp" onclick="switchActivity('mcp',this)" title="MCP Servers">🔌</button>
         <button class="activity-btn" data-panel="backend" onclick="switchActivity('backend',this)" title="Backend Server">🖥️</button>
         <button class="activity-btn" data-panel="music-player" onclick="switchActivity('music-player',this)" title="Music Player">🎵</button>
+        <button class="activity-btn" data-panel="workspaces" onclick="switchActivity('workspaces',this)" title="Workspace Manager">📦</button>
+        <button class="activity-btn" data-panel="ai-tasks" onclick="switchActivity('ai-tasks',this)" title="AI Task Orchestrator">🤖</button>
+        <button class="activity-btn" data-panel="telemetry" onclick="switchActivity('telemetry',this)" title="Telemetry">📊</button>
+        <button class="activity-btn" data-panel="collab" onclick="switchActivity('collab',this)" title="Live Collab">👥</button>
         <div class="activity-spacer"></div>
         <button class="activity-btn" data-panel="settings" onclick="switchActivity('settings',this)" title="Settings">⚙️</button>
       </aside>
@@ -719,6 +723,9 @@
                 <div class="shortcut-ref-row"><kbd>Shift+Alt+F</kbd><span>Format Document</span></div>
                 <div class="shortcut-ref-row"><kbd>Ctrl+G</kbd><span>Go to Line</span></div>
                 <div class="shortcut-ref-row"><kbd>Ctrl+M</kbd><span>Music Player</span></div>
+                <div class="shortcut-ref-row"><kbd>Ctrl+Shift+W</kbd><span>Workspace Manager</span></div>
+                <div class="shortcut-ref-row"><kbd>Ctrl+Shift+A</kbd><span>AI Task Orchestrator</span></div>
+                <div class="shortcut-ref-row"><kbd>Ctrl+Shift+O</kbd><span>Search Symbols</span></div>
               </div>
             </div>
             <div class="settings-section">
@@ -869,6 +876,110 @@
                        onkeydown="if(event.key==='Enter')addLogicStep()" />
                 <button class="logic-add-btn" onclick="addLogicStep()" title="Add Step">+</button>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Workspace Manager Panel -->
+        <div class="panel" id="panel-workspaces">
+          <div class="panel-header">
+            <span>WORKSPACE MANAGER 📦</span>
+            <div class="panel-actions">
+              <button class="icon-btn" onclick="refreshWorkspaces()" title="Refresh">↻</button>
+            </div>
+          </div>
+          <div class="ws-panel">
+            <div class="ws-section">
+              <div class="section-label">WORKSPACES</div>
+              <div id="workspace-list"><div class="ws-empty">No workspaces yet.</div></div>
+            </div>
+            <div class="ws-section">
+              <div class="section-label">CREATE WORKSPACE</div>
+              <input type="text" class="mcp-input" id="ws-new-name" placeholder="Workspace name…" />
+              <input type="text" class="mcp-input" id="ws-new-repo" placeholder="Git repo URL (optional)…" />
+              <input type="text" class="mcp-input" id="ws-new-branch" placeholder="Branch (default: main)…" />
+              <button class="btn-primary mcp-add-btn" onclick="createWorkspace()">+ Create Workspace</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Task Orchestrator Panel -->
+        <div class="panel" id="panel-ai-tasks">
+          <div class="panel-header">
+            <span>AI TASK ORCHESTRATOR 🤖</span>
+          </div>
+          <div class="ai-tasks-panel">
+            <div class="ai-tasks-section">
+              <div class="section-label">TASK TYPE</div>
+              <div id="ai-task-type-list" class="ai-task-type-list"></div>
+            </div>
+            <div class="ai-tasks-section">
+              <div class="section-label">MODEL</div>
+              <select id="ai-task-model-select" class="chat-model-select" style="width:100%;margin-bottom:6px">
+                <option value="gpt-4o">GPT-4o</option>
+                <option value="gpt-4o-mini">GPT-4o mini</option>
+                <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+                <option value="deepseek-coder">DeepSeek Coder</option>
+                <option value="llama3">Ollama (llama3)</option>
+              </select>
+            </div>
+            <div class="ai-tasks-section">
+              <div class="section-label">CONTEXT</div>
+              <textarea id="ai-task-context" class="ai-task-context-area"
+                        placeholder="Select a task type, then enter context or paste code…"
+                        rows="6"></textarea>
+              <button class="btn-primary" id="ai-task-run-btn" onclick="runAITask()" style="width:100%;margin-top:6px">▶ Run Task</button>
+            </div>
+            <div class="ai-tasks-section">
+              <div class="section-label">OUTPUT</div>
+              <div id="ai-task-output" class="ai-task-output"><div class="empty-state">Run a task to see output</div></div>
+            </div>
+            <div class="ai-tasks-section">
+              <div class="section-label">RECENT TASKS</div>
+              <div id="ai-task-history" class="ai-task-history"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Telemetry Panel -->
+        <div class="panel" id="panel-telemetry">
+          <div class="panel-header">
+            <span>TELEMETRY 📊</span>
+            <div class="panel-actions">
+              <button class="icon-btn" onclick="refreshTelemetry()" title="Refresh">↻</button>
+            </div>
+          </div>
+          <div class="telemetry-panel">
+            <div id="telemetry-content" class="telemetry-content">
+              <div class="empty-state">Start backend to view metrics (npm run backend)</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Collab Panel -->
+        <div class="panel" id="panel-collab">
+          <div class="panel-header">
+            <span>LIVE COLLAB 👥</span>
+          </div>
+          <div class="collab-panel">
+            <div class="collab-section">
+              <div class="section-label">SESSION STATUS</div>
+              <div id="collab-session-info">
+                <div class="collab-session-inactive"><span class="collab-dot"></span>No active session</div>
+              </div>
+            </div>
+            <div class="collab-section">
+              <button class="btn-primary" id="collab-start-btn" onclick="startCollabSession()" style="width:100%;margin-bottom:6px">▶ Start Session</button>
+              <button class="btn-danger" id="collab-stop-btn" onclick="stopCollabSession()" style="width:100%;display:none">⏹ End Session</button>
+            </div>
+            <div id="collab-join-area" class="collab-section">
+              <div class="section-label">JOIN SESSION</div>
+              <input type="text" class="mcp-input" id="collab-join-id" placeholder="Session ID…" />
+              <button class="btn-secondary" onclick="joinCollabSession()" style="width:100%;margin-top:4px">→ Join</button>
+            </div>
+            <div class="collab-section">
+              <div class="section-label">HOW IT WORKS</div>
+              <div class="settings-note">Start a session and share the Session ID with teammates. They can join using the same ID. Real-time sync requires a shared backend.</div>
             </div>
           </div>
         </div>

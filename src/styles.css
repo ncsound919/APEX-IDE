@@ -1290,3 +1290,131 @@ body.zen-mode .editor-area {
   background: var(--bg-primary); color: var(--accent-cyan);
   padding: 1px 5px; border-radius: 3px; font-family: var(--font-code);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   NEW FEATURES — Workspace Manager, AI Tasks, Telemetry, Collab
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Workspace Manager ── */
+.ws-panel { display: flex; flex-direction: column; gap: 12px; padding: 8px; overflow-y: auto; }
+.ws-section { display: flex; flex-direction: column; gap: 6px; }
+.ws-empty { color: var(--text-muted); font-size: 11px; padding: 8px 0; text-align: center; }
+.ws-card {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px; border-radius: var(--radius);
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  gap: 8px;
+}
+.ws-card.ws-status-running { border-color: #39ff14; }
+.ws-card.ws-status-stopped { border-color: var(--border); }
+.ws-card-info { flex: 1; min-width: 0; }
+.ws-card-name { font-size: 12px; font-weight: 600; color: var(--text-primary); text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+.ws-card-meta { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+.ws-card-repo { font-size: 10px; color: var(--accent-cyan); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.ws-btn {
+  padding: 3px 8px; border-radius: var(--radius-sm); border: none; cursor: pointer;
+  font-size: 10px; font-weight: 600;
+}
+.ws-btn.green { background: #1a4d1a; color: #39ff14; }
+.ws-btn.green:hover { background: #39ff14; color: #000; }
+.ws-btn.amber { background: #4d3d00; color: var(--accent-gold); }
+.ws-btn.amber:hover { background: var(--accent-gold); color: #000; }
+.ws-btn.red { background: var(--bg-hover); color: var(--text-muted); }
+.ws-btn.red:hover { background: #ff2d2d22; color: #ff4444; }
+
+/* ── AI Task Orchestrator ── */
+.ai-tasks-panel { display: flex; flex-direction: column; gap: 10px; padding: 8px; overflow-y: auto; }
+.ai-tasks-section { display: flex; flex-direction: column; gap: 4px; }
+.ai-task-type-list { display: flex; flex-direction: column; gap: 4px; }
+.ai-task-type-btn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  padding: 7px 10px; border-radius: var(--radius); border: 1px solid var(--border);
+  background: var(--bg-tertiary); cursor: pointer; text-align: left; width: 100%;
+}
+.ai-task-type-btn:hover { border-color: var(--accent-gold); background: var(--bg-hover); }
+.ai-task-type-btn.active { border-color: var(--accent-gold); background: var(--bg-hover); }
+.ai-task-label { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+.ai-task-desc { font-size: 10px; color: var(--text-muted); }
+.ai-task-context-area {
+  width: 100%; box-sizing: border-box;
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  color: var(--text-primary); border-radius: var(--radius); padding: 8px;
+  font-size: 11px; font-family: var(--font-code); resize: vertical;
+}
+.ai-task-context-area:focus { outline: none; border-color: var(--accent-gold); }
+.ai-task-output {
+  min-height: 80px; max-height: 300px; overflow-y: auto;
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px; font-size: 11px;
+}
+.ai-task-loading { color: var(--accent-gold); animation: pulse 1s infinite alternate; }
+.ai-task-error { color: #ff4444; }
+.ai-task-result-header {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+  padding-bottom: 4px; border-bottom: 1px solid var(--border);
+}
+.ai-task-result-label { font-weight: 600; font-size: 11px; color: var(--accent-gold); flex: 1; }
+.ai-task-result-body { font-size: 11px; line-height: 1.6; }
+.ai-task-history { display: flex; flex-direction: column; gap: 3px; }
+.ai-task-hist-item {
+  padding: 4px 8px; border-radius: var(--radius-sm); font-size: 10px;
+  background: var(--bg-tertiary); color: var(--text-secondary);
+}
+.ai-task-hist-done { color: #39ff14; }
+.ai-task-hist-error { color: #ff4444; }
+.ai-task-hist-running { color: var(--accent-gold); }
+
+/* ── Telemetry ── */
+.telemetry-panel { padding: 8px; }
+.telemetry-content { display: flex; flex-direction: column; gap: 10px; }
+.telemetry-grid {
+  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+.telemetry-card {
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px 6px; text-align: center;
+}
+.telemetry-val { font-size: 16px; font-weight: 700; color: var(--accent-gold); }
+.telemetry-label { font-size: 9px; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+.telemetry-meta { font-size: 10px; color: var(--text-muted); text-align: center; }
+
+/* ── Live Collab ── */
+.collab-panel { padding: 8px; display: flex; flex-direction: column; gap: 12px; }
+.collab-section { display: flex; flex-direction: column; gap: 6px; }
+.collab-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-muted); display: inline-block; margin-right: 6px; vertical-align: middle;
+}
+.collab-dot.active { background: #39ff14; box-shadow: 0 0 6px #39ff1488; animation: pulse 1.5s infinite alternate; }
+.collab-session-active { font-size: 11px; color: #39ff14; padding: 6px 8px; background: #39ff1411; border-radius: var(--radius); }
+.collab-session-active code { font-family: var(--font-code); color: var(--accent-cyan); }
+.collab-session-inactive { font-size: 11px; color: var(--text-muted); padding: 6px 8px; background: var(--bg-tertiary); border-radius: var(--radius); }
+.collab-peers { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+/* ── Enhanced Search result styles ── */
+.search-result-file {
+  margin-bottom: 8px; border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+}
+.search-result-file-name {
+  display: block; padding: 5px 8px; background: var(--bg-tertiary);
+  font-size: 11px; font-weight: 600; color: var(--text-primary); cursor: pointer;
+}
+.search-result-file-name:hover { background: var(--bg-hover); }
+.search-result-matches { padding: 0 6px 4px; }
+.search-result-line {
+  padding: 2px 0; font-size: 10px; color: var(--text-secondary);
+  font-family: var(--font-code); cursor: pointer; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.search-result-line:hover { color: var(--accent-gold); }
+
+/* ── Search Content Badge ── */
+.search-content-badge {
+  font-size: 9px; font-weight: 600; text-transform: uppercase;
+  padding: 1px 5px; border-radius: 3px;
+  background: var(--accent-gold); color: #000;
+  margin-left: auto; flex-shrink: 0;
+}

@@ -217,6 +217,27 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10mb' }));
 
+/* ── Workspace Telemetry & Metrics ── */
+const _telemetry = {
+  startTime:     Date.now(),
+  fileOps:       0,
+  execOps:       0,
+  llmRequests:   0,
+  searchQueries: 0,
+  traces:        [],  // ring buffer, max 100
+};
+
+// Register telemetry middleware BEFORE routes so every request is counted
+app.use((req, _res, next) => {
+  if (req.path.startsWith('/api/files'))  _telemetry.fileOps++;
+  if (req.path.startsWith('/api/exec'))   _telemetry.execOps++;
+  if (req.path.startsWith('/api/llm'))    _telemetry.llmRequests++;
+  if (req.path.startsWith('/api/search')) _telemetry.searchQueries++;
+  if (_telemetry.traces.length >= 100) _telemetry.traces.shift();
+  _telemetry.traces.push({ ts: Date.now(), method: req.method, path: req.path });
+  next();
+});
+
 /* ── Health ── */
 app.get('/api/health', (_req, res) => {
   res.json({
@@ -547,6 +568,345 @@ app.post('/api/lint', execLimiter, async (req, res) => {
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
+});
+
+/* ── Workspace Management ── */
+const WORKSPACES = new Map();
+
+function newWorkspaceId() {
+  return crypto.randomUUID();
+}
+
+app.get('/api/workspaces', fsLimiter, (_req, res) => {
+  res.json({ workspaces: Array.from(WORKSPACES.values()) });
+});
+
+app.post('/api/workspaces', fsLimiter, (req, res) => {
+  const { name, repo_url, branch, compute_profile, container_config } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
+  const id = newWorkspaceId();
+  const workspace = {
+    id,
+    name: name.trim(),
+    user_id: 'local',
+    repo_url: repo_url || '',
+    branch: branch || 'main',
+    compute_profile: compute_profile || { cpu: 2, ram_gb: 4, gpu: false },
+    container_config: container_config || { image: 'node:20-alpine', ports: [], env: {} },
+    status: 'stopped',
+    created_at: Date.now(),
+    root: APEX_ROOT,
+  };
+  WORKSPACES.set(id, workspace);
+  res.status(201).json(workspace);
+});
+
+app.get('/api/workspaces/:id', fsLimiter, (req, res) => {
+  const ws = WORKSPACES.get(req.params.id);
+  if (!ws) return res.status(404).json({ error: 'Workspace not found' });
+  res.json(ws);
+});
+
+app.post('/api/workspaces/:id/start', execLimiter, (req, res) => {
+  const ws = WORKSPACES.get(req.params.id);
+  if (!ws) return res.status(404).json({ error: 'Workspace not found' });
+  const startTime = Date.now();
+  ws.status = 'running';
+  ws.started_at = startTime;
+  WORKSPACES.set(ws.id, ws);
+  res.json({ ok: true, workspace: ws, spin_up_time_ms: Date.now() - startTime });
+});
+
+app.post('/api/workspaces/:id/stop', execLimiter, (req, res) => {
+  const ws = WORKSPACES.get(req.params.id);
+  if (!ws) return res.status(404).json({ error: 'Workspace not found' });
+  ws.status = 'stopped';
+  ws.stopped_at = Date.now();
+  WORKSPACES.set(ws.id, ws);
+  res.json({ ok: true, workspace: ws });
+});
+
+app.delete('/api/workspaces/:id', fsLimiter, (req, res) => {
+  if (!WORKSPACES.has(req.params.id)) return res.status(404).json({ error: 'Workspace not found' });
+  WORKSPACES.delete(req.params.id);
+  res.json({ ok: true });
+});
+
+/* ── Project Search & Indexing ── */
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.cache', 'coverage', '__pycache__']);
+const SEARCH_MAX_FILE_BYTES = 1024 * 1024; // 1 MB
+
+/**
+ * Lightweight ReDoS safety check: rejects patterns containing nested
+ * quantifiers on groups/character-classes (e.g. `(a+)+`, `([ab]+)*`).
+ * Returns true if the pattern appears safe to compile and run.
+ */
+function isSafeRegex(pattern) {
+  // Reject patterns with nested quantifiers — the primary ReDoS source
+  if (/(\(.*\+.*\)|\(.*\*.*\)|\[.*\+.*\]|\[.*\*.*\])[\+\*]/.test(pattern)) return false;
+  // Reject excessively long patterns
+  if (pattern.length > 200) return false;
+  return true;
+}
+
+/** Search file contents recursively within APEX_ROOT */
+function searchFiles(dir, query, opts, results, depth) {
+  if (depth > 6 || results.length >= 200) return;
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
+  for (const e of entries) {
+    if (e.name.startsWith('.') && e.name !== '.gitignore') continue;
+    const full = path.join(dir, e.name);
+    const rel  = path.relative(APEX_ROOT, full);
+    if (e.isDirectory()) {
+      if (!SKIP_DIRS.has(e.name)) searchFiles(full, query, opts, results, depth + 1);
+    } else {
+      let stat;
+      try { stat = fs.statSync(full); } catch (_) { continue; }
+      if (stat.size > SEARCH_MAX_FILE_BYTES) continue;
+      let content;
+      try { content = fs.readFileSync(full, 'utf8'); } catch (_) { continue; }
+
+      let re = null;
+      if (opts.regex) {
+        // Reject patterns with ReDoS-prone constructs before compiling
+        if (isSafeRegex(query)) {
+          try { re = new RegExp(query, opts.matchCase ? 'g' : 'gi'); } catch (_) { continue; }
+        } else {
+          continue; // skip file rather than risk catastrophic backtracking
+        }
+      }
+
+      const lines = content.split('\n');
+      const matchLines = [];
+      lines.forEach((line, i) => {
+        let hit;
+        if (re) {
+          re.lastIndex = 0;
+          hit = re.test(line);
+        } else {
+          hit = (opts.matchCase ? line : line.toLowerCase()).includes(
+            opts.matchCase ? query : query.toLowerCase()
+          );
+        }
+        if (hit) matchLines.push({ line: i + 1, text: line.slice(0, 200) });
+      });
+      if (matchLines.length > 0) {
+        results.push({ file: rel, matches: matchLines.slice(0, 10), total: matchLines.length });
+      }
+    }
+  }
+}
+
+app.get('/api/search', fsLimiter, (req, res) => {
+  try {
+    const { q, regex, matchCase } = req.query;
+    if (!q || !q.trim()) return res.status(400).json({ error: 'query required' });
+    if (regex === '1') {
+      if (!isSafeRegex(q.trim())) return res.status(400).json({ error: 'Regex pattern is too complex or potentially unsafe (ReDoS risk). Simplify the pattern.' });
+      try { new RegExp(q.trim()); } catch (e) { return res.status(400).json({ error: `Invalid regex: ${e.message}` }); }
+    }
+    const opts = { regex: regex === '1', matchCase: matchCase === '1' };
+    const results = [];
+    searchFiles(APEX_ROOT, q.trim(), opts, results, 0);
+    res.json({ query: q, results, count: results.length });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/** Extract symbols (functions, classes) from a file */
+function extractSymbols(content, language) {
+  const symbols = [];
+  const patterns = {
+    javascript: [
+      { re: /(?:^|\s)(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/gm,     kind: 'function' },
+      { re: /(?:^|\s)(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:async\s*)?\(/gm, kind: 'function' },
+      { re: /(?:^|\s)class\s+([A-Za-z_$][A-Za-z0-9_$]*)/gm,                            kind: 'class'    },
+    ],
+    typescript: [
+      { re: /(?:^|\s)(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*[(<]/gm,   kind: 'function' },
+      { re: /(?:^|\s)class\s+([A-Za-z_$][A-Za-z0-9_$]*)/gm,                            kind: 'class'    },
+      { re: /(?:^|\s)interface\s+([A-Za-z_$][A-Za-z0-9_$]*)/gm,                        kind: 'interface' },
+      { re: /(?:^|\s)type\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=/gm,                         kind: 'type'     },
+    ],
+    python: [
+      { re: /^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/gm,   kind: 'function' },
+      { re: /^class\s+([A-Za-z_][A-Za-z0-9_]*)/gm,       kind: 'class'    },
+    ],
+  };
+  const lines = content.split('\n');
+  const pats = patterns[language] || patterns.javascript;
+  pats.forEach(({ re, kind }) => {
+    let m;
+    re.lastIndex = 0;
+    while ((m = re.exec(content)) !== null) {
+      const name = m[1];
+      const lineNum = content.slice(0, m.index).split('\n').length;
+      symbols.push({ name, kind, line: lineNum, preview: (lines[lineNum - 1] || '').trim().slice(0, 100) });
+    }
+  });
+  return symbols;
+}
+
+app.get('/api/symbols', fsLimiter, (req, res) => {
+  try {
+    const filePath = safeResolve(req.query.path);
+    const stat = fs.statSync(filePath);
+    if (stat.size > MAX_FILE_SIZE_BYTES) return res.status(413).json({ error: 'File too large' });
+    const content  = fs.readFileSync(filePath, 'utf8');
+    const ext      = path.extname(filePath).slice(1).toLowerCase();
+    const langMap  = { js: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript', py: 'python' };
+    const language = langMap[ext] || 'javascript';
+    const symbols  = extractSymbols(content, language);
+    res.json({ file: req.query.path, language, symbols });
+  } catch (err) {
+    res.status(err.code === 'FORBIDDEN' ? 403 : 400).json({ error: err.message });
+  }
+});
+
+/* ── AI Task Orchestrator ── */
+class BoundedMap extends Map {
+  constructor(maxSize, entries) {
+    super(entries);
+    this.maxSize = typeof maxSize === 'number' && maxSize > 0 ? maxSize : Number.MAX_SAFE_INTEGER;
+  }
+
+  set(key, value) {
+    if (!this.has(key) && this.size >= this.maxSize) {
+      const firstKey = this.keys().next().value;
+      if (firstKey !== undefined) {
+        this.delete(firstKey);
+      }
+    }
+    return super.set(key, value);
+  }
+}
+
+const MAX_AI_TASKS = 1000;
+const AI_TASKS = new BoundedMap(MAX_AI_TASKS);
+const AI_TASK_SYSTEM_PROMPTS = {
+  generate_code:    'You are an expert software engineer. Generate clean, well-documented, production-ready code based on the given requirements.',
+  refactor_module:  'You are an expert software engineer. Refactor the provided code for better readability, performance, and maintainability. Explain key changes.',
+  write_tests:      'You are an expert in software testing. Write comprehensive unit tests with clear descriptions and edge cases.',
+  generate_docs:    'You are a technical writer. Generate clear, comprehensive documentation for the provided code.',
+  debug_analysis:   'You are an expert debugger. Analyze the code for bugs, edge cases, and potential errors. Provide fixes.',
+  security_scan:    'You are a security expert. Identify security vulnerabilities, injection risks, and unsafe patterns. Suggest remediation.',
+  experiment_setup: 'You are a data scientist. Design an experiment setup with clear hypotheses, steps, and success metrics.',
+};
+
+app.get('/api/ai/tasks', fsLimiter, (_req, res) => {
+  res.json({ tasks: Array.from(AI_TASKS.values()) });
+});
+
+app.post('/api/ai/tasks', execLimiter, async (req, res) => {
+  try {
+    const { task_type, context, provider, model, apiKey, ollamaEndpoint } = req.body;
+    if (!task_type) return res.status(400).json({ error: 'task_type required' });
+    if (!context)   return res.status(400).json({ error: 'context required' });
+
+    const taskId = crypto.randomUUID();
+    const task = {
+      id: taskId,
+      task_type,
+      status: 'running',
+      created_at: Date.now(),
+      context: String(context).slice(0, 8000),
+    };
+    AI_TASKS.set(taskId, task);
+
+    const systemPrompt = AI_TASK_SYSTEM_PROMPTS[task_type] || AI_TASK_SYSTEM_PROMPTS.generate_code;
+    const messages = [{ role: 'user', content: String(context).slice(0, 8000) }];
+
+    let proxyResult;
+    try {
+      const usedProvider = provider || 'openai';
+      const usedModel = model || 'gpt-4o';
+
+      if (usedProvider === 'anthropic' || usedModel.startsWith('claude')) {
+        if (!apiKey) throw new Error('Anthropic API key required');
+        proxyResult = await proxyPost('https://api.anthropic.com/v1/messages', {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        }, { model: usedModel, messages, max_tokens: 4096, system: systemPrompt });
+      } else if (usedProvider === 'deepseek' || usedModel.startsWith('deepseek')) {
+        if (!apiKey) throw new Error('DeepSeek API key required');
+        proxyResult = await proxyPost('https://api.deepseek.com/v1/chat/completions', {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        }, { model: usedModel, messages: [{ role: 'system', content: systemPrompt }, ...messages], max_tokens: 4096 });
+      } else if (usedProvider === 'ollama') {
+        let base = 'http://127.0.0.1:11434';
+        if (ollamaEndpoint) {
+          try { base = new URL(ollamaEndpoint).origin; }
+          catch (_) { throw new Error(`Invalid Ollama endpoint URL: "${ollamaEndpoint}". Expected format: http://localhost:11434`); }
+        }
+        proxyResult = await proxyPost(`${base}/api/chat`, { 'Content-Type': 'application/json' },
+          { model: usedModel || 'llama3', messages: [{ role: 'system', content: systemPrompt }, ...messages], stream: false });
+      } else {
+        if (!apiKey) throw new Error('OpenAI API key required');
+        proxyResult = await proxyPost('https://api.openai.com/v1/chat/completions', {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        }, { model: usedModel, messages: [{ role: 'system', content: systemPrompt }, ...messages], max_tokens: 4096 });
+      }
+
+      // Treat non-2xx HTTP responses from the LLM provider as task errors
+      const httpOk = proxyResult.status >= 200 && proxyResult.status < 300;
+      if (!httpOk) {
+        task.status = 'error';
+        task.completed_at = Date.now();
+        task.duration_ms = task.completed_at - task.created_at;
+        task.error = `LLM provider returned HTTP ${proxyResult.status}`;
+        AI_TASKS.set(taskId, task);
+        res.status(proxyResult.status).json({ task_id: taskId, task_type, status: 'error', error: task.error, result: proxyResult.body });
+      } else {
+        task.status = 'done';
+        task.completed_at = Date.now();
+        task.duration_ms = task.completed_at - task.created_at;
+        task.result = proxyResult.body;
+        AI_TASKS.set(taskId, task);
+        res.status(proxyResult.status).json({ task_id: taskId, task_type, status: 'done', result: proxyResult.body });
+      }
+    } catch (llmErr) {
+      task.status = 'error';
+      task.error = llmErr.message;
+      AI_TASKS.set(taskId, task);
+      res.status(502).json({ task_id: taskId, status: 'error', error: llmErr.message });
+    }
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/ai/tasks/:id', fsLimiter, (req, res) => {
+  const task = AI_TASKS.get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  res.json(task);
+});
+
+app.get('/api/metrics', fsLimiter, (_req, res) => {
+  const uptimeMs = Date.now() - _telemetry.startTime;
+  const mem = process.memoryUsage();
+  res.json({
+    uptime_ms:       uptimeMs,
+    uptime_s:        Math.floor(uptimeMs / 1000),
+    file_ops:        _telemetry.fileOps,
+    exec_ops:        _telemetry.execOps,
+    llm_requests:    _telemetry.llmRequests,
+    search_queries:  _telemetry.searchQueries,
+    memory_heap_mb:  Math.round(mem.heapUsed / 1024 / 1024),
+    memory_rss_mb:   Math.round(mem.rss / 1024 / 1024),
+    workspace_count: WORKSPACES.size,
+    ai_task_count:   AI_TASKS.size,
+    node_version:    process.version,
+    platform:        os.platform(),
+  });
+});
+
+app.get('/api/traces', fsLimiter, (_req, res) => {
+  res.json({ traces: _telemetry.traces.slice(-50) });
 });
 
 /* ─── HTTP Server + WebSocket Terminal ───────────────────────────────── */

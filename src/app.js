@@ -5,6 +5,71 @@
 
 'use strict';
 
+/* ─── Global Constants ───────────────────────────────────────────── */
+const APEX_VERSION = '2.1.0';
+const MAX_IMPORT_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
+
+/** Convert a file name to a safe ID for use as state/DOM keys */
+function getFileId(name) {
+  return 'file-' + name.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+/** Color themes — CSS variable overrides */
+const THEMES = {
+  'hiphop-dark': {
+    '--bg-primary':   '#0d0d0f',
+    '--bg-secondary': '#131316',
+    '--bg-tertiary':  '#1c1c22',
+    '--accent-gold':  '#f5c518',
+    '--accent-pink':  '#ff2d78',
+    '--accent-green': '#39ff14',
+    '--accent-cyan':  '#00e5ff',
+    '--accent-purple':'#9b59ff',
+    '--text-primary': '#f0f0f5',
+    '--text-muted':   '#666688',
+    monacoTheme: 'apex-dark',
+  },
+  'midnight-blue': {
+    '--bg-primary':   '#0a0e1a',
+    '--bg-secondary': '#0d1224',
+    '--bg-tertiary':  '#121830',
+    '--accent-gold':  '#4fc3f7',
+    '--accent-pink':  '#7c4dff',
+    '--accent-green': '#69f0ae',
+    '--accent-cyan':  '#40c4ff',
+    '--accent-purple':'#e040fb',
+    '--text-primary': '#e8eaf6',
+    '--text-muted':   '#546e7a',
+    monacoTheme: 'vs-dark',
+  },
+  'solarized-dark': {
+    '--bg-primary':   '#002b36',
+    '--bg-secondary': '#073642',
+    '--bg-tertiary':  '#0d3d4f',
+    '--accent-gold':  '#b58900',
+    '--accent-pink':  '#d33682',
+    '--accent-green': '#859900',
+    '--accent-cyan':  '#2aa198',
+    '--accent-purple':'#6c71c4',
+    '--text-primary': '#839496',
+    '--text-muted':   '#586e75',
+    monacoTheme: 'vs-dark',
+  },
+  'light': {
+    '--bg-primary':   '#ffffff',
+    '--bg-secondary': '#f5f5f5',
+    '--bg-tertiary':  '#eeeeee',
+    '--accent-gold':  '#e65100',
+    '--accent-pink':  '#c2185b',
+    '--accent-green': '#388e3c',
+    '--accent-cyan':  '#0277bd',
+    '--accent-purple':'#6a1b9a',
+    '--text-primary': '#212121',
+    '--text-muted':   '#757575',
+    monacoTheme: 'vs',
+  },
+};
+
 /* ═══════════════════════════════════════════════════════════════════════
    ApexBackend — connects to the optional Node.js backend server.
    When the backend is running (npm run backend), real filesystem,
@@ -97,7 +162,35 @@ const ApexBackend = (() => {
   const llmProxy = (provider, model, messages, system, apiKey, ollamaEndpoint) =>
     post('/api/llm/proxy', { provider, model, messages, system, apiKey, ollamaEndpoint });
 
-  /* ── WebSocket Terminal ── */
+  /* ── Workspace Management ── */
+  const workspaces = {
+    list:   ()                            => get('/api/workspaces'),
+    create: (name, repoUrl, branch)       => post('/api/workspaces', { name, repo_url: repoUrl, branch }),
+    get:    (id)                          => get(`/api/workspaces/${id}`),
+    start:  (id)                          => post(`/api/workspaces/${id}/start`, {}),
+    stop:   (id)                          => post(`/api/workspaces/${id}/stop`, {}),
+    remove: (id)                          => del(`/api/workspaces/${encodeURIComponent(id)}`, {}),
+  };
+
+  /* ── Project Search & Symbols ── */
+  const search  = (q, regex, matchCase) =>
+    get(`/api/search?q=${encodeURIComponent(q)}&regex=${regex ? '1' : '0'}&matchCase=${matchCase ? '1' : '0'}`);
+  const symbols = (filePath) =>
+    get(`/api/symbols?path=${encodeURIComponent(filePath)}`);
+
+  /* ── AI Task Orchestrator ── */
+  const aiTasks = {
+    list:   ()                                          => get('/api/ai/tasks'),
+    create: (task_type, context, provider, model, apiKey, ollamaEndpoint) =>
+      post('/api/ai/tasks', { task_type, context, provider, model, apiKey, ollamaEndpoint }),
+    get:    (id)                                        => get(`/api/ai/tasks/${id}`),
+  };
+
+  /* ── Telemetry ── */
+  const metrics = () => get('/api/metrics');
+  const traces  = () => get('/api/traces');
+
+
   function openTerminal(onData, onExit) {
     if (_ws && (_ws.readyState === WebSocket.OPEN || _ws.readyState === WebSocket.CONNECTING)) {
       _wsHandlers.push({ onData, onExit });
@@ -158,6 +251,12 @@ const ApexBackend = (() => {
     git,
     exec,
     llmProxy,
+    workspaces,
+    search,
+    symbols,
+    aiTasks,
+    metrics,
+    traces,
     openTerminal,
     sendTerminalInput,
     closeTerminal,
@@ -208,6 +307,15 @@ const ApexState = {
   // Logic Mode state
   logicPlan: [],            // [{id, text, status:'pending'|'active'|'done'|'skipped'}]
   logicPlanNextId: 1,
+  // Workspace management state
+  workspaces: [],
+  // AI Tasks state
+  aiTasks: [],
+  aiTaskLoading: false,
+  // Telemetry state
+  telemetryMetrics: null,
+  // Live session sync state
+  collab: { active: false, sessionId: null, peers: [] },
 };
 
 /* ─── Sample File Tree ───────────────────────────────────────────── */
@@ -282,6 +390,13 @@ const COMMANDS = [
   { icon: '▶',  label: 'Music: Play / Pause',      shortcut: '',              fn: () => mpTogglePlay()        },
   { icon: '🍅', label: 'Toggle Pomodoro Timer',    shortcut: '',              fn: () => { const cb = document.getElementById('settings-pomodoro'); if (cb) { cb.checked = !cb.checked; togglePomodoro(cb.checked); } switchActivity('settings'); } },
   { icon: '🧘', label: 'Toggle Zen Mode',          shortcut: '',              fn: () => { const cb = document.getElementById('settings-zen'); if (cb) { cb.checked = !cb.checked; toggleZenMode(cb.checked); } } },
+  // New features
+  { icon: '📦', label: 'Open Workspace Manager',   shortcut: 'Ctrl+Shift+W',  fn: () => switchActivity('workspaces') },
+  { icon: '🤖', label: 'Open AI Task Orchestrator',shortcut: 'Ctrl+Shift+A',  fn: () => switchActivity('ai-tasks') },
+  { icon: '📊', label: 'Open Telemetry Dashboard', shortcut: '',              fn: () => switchActivity('telemetry') },
+  { icon: '👥', label: 'Open Live Collab Session', shortcut: '',              fn: () => switchActivity('collab') },
+  { icon: '🔍', label: 'Search Symbols in File',   shortcut: 'Ctrl+Shift+O',  fn: () => searchSymbolsInFile() },
+  { icon: '▶',  label: 'AI Tasks: Run Task',       shortcut: '',              fn: () => { switchActivity('ai-tasks'); runAITask(); } },
 ];
 
 /* ─── File Icons ─────────────────────────────────────────────────── */
@@ -366,6 +481,8 @@ function initApp() {
       loadRealFileTree();
       connectRealTerminal();
       refreshGitStatus();
+      refreshWorkspaces();
+      refreshTelemetry();
     } else {
       log('[INFO] Backend offline — running in simulation mode (run: npm run backend)');
     }
@@ -393,6 +510,9 @@ function initApp() {
   renderMCPServers();
   renderCLIInstances();
   renderLogicPlan();
+  renderAITaskTypes();
+  renderWorkspaces();
+  renderCollabPanel();
 
   // Restore saved theme
   try {
@@ -585,37 +705,7 @@ function showPane(name) {
 function showMonacoPaneFor(node) {
   showPane('editor');
   if (ApexState.monacoEditor && typeof monaco !== 'undefined') {
-    const langMap = { js: 'javascript', ts: 'typescript', css: 'css', html: 'html', json: 'json', md: 'markdown', py: 'python', go: 'go', rs: 'rust', sh: 'shell', yml: 'yaml', yaml: 'yaml', toml: 'ini', rb: 'ruby', java: 'java', cpp: 'cpp', c: 'c', cs: 'csharp' };
-    const ext = node.name.split('.').pop().toLowerCase();
-    const lang = langMap[ext] || 'plaintext';
-
-    const applyContent = (text) => {
-      const oldModel = ApexState.monacoEditor.getModel();
-      const model = monaco.editor.createModel(text, lang);
-      ApexState.monacoEditor.setModel(model);
-      try {
-        const oldModel = ApexState.monacoEditor.getModel();
-        const model = monaco.editor.createModel(text, lang);
-        ApexState.monacoEditor.setModel(model);
-        // Store path for save
-        ApexState.activeFilePath = node.backendPath || node.name;
-        if (oldModel && oldModel !== model) oldModel.dispose();
-        document.getElementById('status-lang').textContent = lang.charAt(0).toUpperCase() + lang.slice(1);
-      } catch (err) {
-        // Log errors related to Monaco model creation or disposal
-        console.error('Failed to update Monaco editor model:', err);
-      }
-    };
-
-    // Load real content if backend is connected
-    if (ApexBackend.connected && node.backendPath) {
-      ApexBackend.files.read(node.backendPath)
-        .then(r => applyContent(r.content || ''))
-        .catch(() => applyContent(`// ${node.name}\n`));
-    } else {
-      applyContent(`// ${node.name}\n`);
-    }
-    const langMap = { js: 'javascript', ts: 'typescript', css: 'css', html: 'html', json: 'json', md: 'markdown', py: 'python', go: 'go', rs: 'rust', sh: 'shell', txt: 'plaintext' };
+    const langMap = { js: 'javascript', ts: 'typescript', css: 'css', html: 'html', json: 'json', md: 'markdown', py: 'python', go: 'go', rs: 'rust', sh: 'shell', yml: 'yaml', yaml: 'yaml', toml: 'ini', rb: 'ruby', java: 'java', cpp: 'cpp', c: 'c', cs: 'csharp', txt: 'plaintext' };
     const ext = node.name.split('.').pop().toLowerCase();
     const lang = langMap[ext] || 'plaintext';
     const fileId = getFileId(node.name);
@@ -631,18 +721,28 @@ function showMonacoPaneFor(node) {
       return;
     }
 
-    // Restore saved content or use language-appropriate default
-    const savedContent = ApexState.fileBuffers[fileId];
-    const content = savedContent ?? '';
+    const applyContent = (text) => {
+      try {
+        const oldModel = ApexState.monacoEditor.getModel();
+        const newModel = monaco.editor.createModel(text, lang);
+        ApexState.monacoEditor.setModel(newModel);
+        ApexState.activeFilePath = node.backendPath || node.name;
+        if (oldModel && oldModel !== newModel) oldModel.dispose();
+        ApexState._currentFileId = fileId;
+        document.getElementById('status-lang').textContent = lang.charAt(0).toUpperCase() + lang.slice(1);
+      } catch (err) {
+        console.error('Failed to update Monaco editor model:', err);
+      }
+    };
 
-    const oldModel = ApexState.monacoEditor.getModel();
-    const model = monaco.editor.createModel(content, lang);
-    ApexState.monacoEditor.setModel(model);
-    if (oldModel && oldModel !== model) {
-      oldModel.dispose();
+    // Load real content if backend is connected
+    if (ApexBackend.connected && node.backendPath) {
+      ApexBackend.files.read(node.backendPath)
+        .then(r => applyContent(r.content || ''))
+        .catch(() => applyContent(ApexState.fileBuffers[fileId] ?? `// ${node.name}\n`));
+    } else {
+      applyContent(ApexState.fileBuffers[fileId] ?? `// ${node.name}\n`);
     }
-    ApexState._currentFileId = fileId;
-    document.getElementById('status-lang').textContent = lang.charAt(0).toUpperCase() + lang.slice(1);
   }
 }
 
@@ -677,6 +777,10 @@ function switchActivity(name, btn) {
 
   // Populate API keys when settings opens
   if (name === 'settings') populateSettingsKeys();
+  // Refresh telemetry when telemetry panel opens
+  if (name === 'telemetry') refreshTelemetry();
+  // Refresh workspaces when workspace panel opens
+  if (name === 'workspaces') refreshWorkspaces();
 }
 
 /* ─── Right Panels ────────────────────────────────────────────────── */
@@ -1260,7 +1364,412 @@ function startMegacode() {
   processCommand('megacode');
 }
 
-/* ─── File Actions ────────────────────────────────────────────────── */
+/* ─── Workspace Management ───────────────────────────────────────── */
+function renderWorkspaces() {
+  const list = document.getElementById('workspace-list');
+  if (!list) return;
+  list.innerHTML = '';
+  const workspaces = ApexState.workspaces;
+  if (!workspaces.length) {
+    list.innerHTML = '<div class="ws-empty">No workspaces yet. Create one below.</div>';
+    return;
+  }
+  workspaces.forEach(ws => {
+    const safeId     = CSS.escape(ws.id);
+    const card = document.createElement('div');
+    card.className = `ws-card ws-status-${ws.status}`;
+
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'ws-card-info';
+
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'ws-card-name';
+    nameDiv.textContent = ws.name;
+
+    const metaDiv = document.createElement('div');
+    metaDiv.className = 'ws-card-meta';
+    metaDiv.textContent = `${ws.branch || 'main'} · ${ws.status.toUpperCase()}`;
+
+    infoDiv.appendChild(nameDiv);
+    infoDiv.appendChild(metaDiv);
+
+    if (ws.repo_url) {
+      const repoDiv = document.createElement('div');
+      repoDiv.className = 'ws-card-repo';
+      repoDiv.textContent = ws.repo_url;
+      infoDiv.appendChild(repoDiv);
+    }
+
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'ws-card-actions';
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = ws.status === 'stopped' ? 'ws-btn green' : 'ws-btn amber';
+    toggleBtn.textContent = ws.status === 'stopped' ? '▶ Start' : '⏹ Stop';
+    toggleBtn.addEventListener('click', () => ws.status === 'stopped' ? workspaceStart(ws.id) : workspaceStop(ws.id));
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'ws-btn red';
+    delBtn.textContent = '🗑';
+    delBtn.addEventListener('click', () => workspaceDelete(ws.id));
+
+    actionsDiv.appendChild(toggleBtn);
+    actionsDiv.appendChild(delBtn);
+
+    card.appendChild(infoDiv);
+    card.appendChild(actionsDiv);
+    list.appendChild(card);
+  });
+}
+
+function refreshWorkspaces() {
+  if (!ApexBackend.connected) {
+    renderWorkspaces();
+    return;
+  }
+  ApexBackend.workspaces.list()
+    .then(r => {
+      ApexState.workspaces = r.workspaces || [];
+      renderWorkspaces();
+    })
+    .catch(() => renderWorkspaces());
+}
+
+function createWorkspace() {
+  const nameEl   = document.getElementById('ws-new-name');
+  const repoEl   = document.getElementById('ws-new-repo');
+  const branchEl = document.getElementById('ws-new-branch');
+  const name = nameEl?.value.trim();
+  if (!name) { showToast('Workspace name required', 'warn'); return; }
+
+  if (ApexBackend.connected) {
+    ApexBackend.workspaces.create(name, repoEl?.value.trim(), branchEl?.value.trim() || 'main')
+      .then(ws => {
+        ApexState.workspaces.push(ws);
+        renderWorkspaces();
+        if (nameEl) nameEl.value = '';
+        if (repoEl) repoEl.value = '';
+        if (branchEl) branchEl.value = '';
+        showToast(`Workspace "${name}" created`, 'success');
+        log(`[Workspace] Created: ${name}`);
+      })
+      .catch(e => showToast(`Failed: ${e.message}`, 'error'));
+  } else {
+    const ws = { id: 'ws-' + Date.now(), name, status: 'stopped', branch: branchEl?.value.trim() || 'main', repo_url: repoEl?.value.trim() || '' };
+    ApexState.workspaces.push(ws);
+    renderWorkspaces();
+    if (nameEl) nameEl.value = '';
+    showToast(`Workspace "${name}" created (sim)`, 'success');
+  }
+}
+
+function workspaceStart(id) {
+  if (ApexBackend.connected) {
+    ApexBackend.workspaces.start(id)
+      .then(r => {
+        const ws = ApexState.workspaces.find(w => w.id === id);
+        if (ws) { ws.status = 'running'; ws.started_at = Date.now(); }
+        renderWorkspaces();
+        showToast(`Workspace started (${r.spin_up_time_ms || 0}ms)`, 'success');
+      })
+      .catch(e => showToast(`Start failed: ${e.message}`, 'error'));
+  } else {
+    const ws = ApexState.workspaces.find(w => w.id === id);
+    if (ws) { ws.status = 'running'; renderWorkspaces(); showToast('Workspace started (sim)', 'success'); }
+  }
+}
+
+function workspaceStop(id) {
+  if (ApexBackend.connected) {
+    ApexBackend.workspaces.stop(id)
+      .then(() => {
+        const ws = ApexState.workspaces.find(w => w.id === id);
+        if (ws) ws.status = 'stopped';
+        renderWorkspaces();
+        showToast('Workspace stopped', 'success');
+      })
+      .catch(e => showToast(`Stop failed: ${e.message}`, 'error'));
+  } else {
+    const ws = ApexState.workspaces.find(w => w.id === id);
+    if (ws) { ws.status = 'stopped'; renderWorkspaces(); showToast('Workspace stopped (sim)', 'success'); }
+  }
+}
+
+function workspaceDelete(id) {
+  if (!confirm('Delete this workspace?')) return;
+  if (ApexBackend.connected) {
+    ApexBackend.workspaces.remove(id)
+      .then(() => {
+        ApexState.workspaces = ApexState.workspaces.filter(w => w.id !== id);
+        renderWorkspaces();
+        showToast('Workspace deleted', 'success');
+      })
+      .catch(e => showToast(`Delete failed: ${e.message}`, 'error'));
+  } else {
+    ApexState.workspaces = ApexState.workspaces.filter(w => w.id !== id);
+    renderWorkspaces();
+    showToast('Workspace deleted (sim)', 'success');
+  }
+}
+
+/* ─── AI Task Orchestrator ───────────────────────────────────────── */
+const AI_TASK_TYPES = [
+  { id: 'generate_code',   label: '⚙️ Generate Code',   desc: 'Generate production-ready code from requirements' },
+  { id: 'refactor_module', label: '♻️ Refactor Module', desc: 'Improve readability & performance' },
+  { id: 'write_tests',     label: '🧪 Write Tests',     desc: 'Generate comprehensive unit tests' },
+  { id: 'generate_docs',   label: '📝 Generate Docs',   desc: 'Create documentation from code' },
+  { id: 'debug_analysis',  label: '🔧 Debug Analysis',  desc: 'Find and diagnose bugs' },
+  { id: 'security_scan',   label: '🔒 Security Scan',   desc: 'Identify vulnerabilities' },
+  { id: 'experiment_setup',label: '🔬 Experiment Setup',desc: 'Design experiment with metrics' },
+];
+
+function renderAITaskTypes() {
+  const list = document.getElementById('ai-task-type-list');
+  if (!list) return;
+  list.innerHTML = '';
+  AI_TASK_TYPES.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'ai-task-type-btn';
+    btn.dataset.taskType = t.id;
+    btn.innerHTML = `<span class="ai-task-label">${t.label}</span><span class="ai-task-desc">${t.desc}</span>`;
+    btn.onclick = () => selectAITaskType(t.id, btn);
+    list.appendChild(btn);
+  });
+}
+
+function selectAITaskType(taskType, btn) {
+  document.querySelectorAll('.ai-task-type-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const ctxArea = document.getElementById('ai-task-context');
+  const placeholders = {
+    generate_code:    'Describe what code to generate, e.g. "A REST API endpoint for user login"…',
+    refactor_module:  'Paste the code you want to refactor…',
+    write_tests:      'Paste the code to write tests for…',
+    generate_docs:    'Paste the code to document…',
+    debug_analysis:   'Paste the buggy code or describe the issue…',
+    security_scan:    'Paste the code to scan for vulnerabilities…',
+    experiment_setup: 'Describe the experiment you want to design…',
+  };
+  if (ctxArea) ctxArea.placeholder = placeholders[taskType] || 'Enter context…';
+}
+
+function runAITask() {
+  const activeBtn = document.querySelector('.ai-task-type-btn.active');
+  const task_type = activeBtn?.dataset.taskType;
+  const ctxArea   = document.getElementById('ai-task-context');
+  const context   = ctxArea?.value.trim();
+
+  if (!task_type) { showToast('Select a task type first', 'warn'); return; }
+  if (!context)   { showToast('Enter task context first', 'warn'); return; }
+  if (ApexState.aiTaskLoading) return;
+
+  ApexState.aiTaskLoading = true;
+  const runBtn = document.getElementById('ai-task-run-btn');
+  if (runBtn) { runBtn.disabled = true; runBtn.textContent = '⏳ Running…'; }
+
+  const model = document.getElementById('ai-task-model-select')?.value || 'gpt-4o';
+  const { openai, anthropic, deepseek } = ApexState.keys;
+  let provider = 'openai';
+  if (model.startsWith('claude')) provider = 'anthropic';
+  else if (model.startsWith('deepseek')) provider = 'deepseek';
+  else if (model === 'llama3' || model === 'ollama') provider = 'ollama';
+  const apiKey = provider === 'anthropic' ? anthropic
+               : provider === 'deepseek'  ? deepseek
+               : openai;
+
+  const outputEl = document.getElementById('ai-task-output');
+  if (outputEl) outputEl.innerHTML = '<div class="ai-task-loading">⏳ Running AI task…</div>';
+
+  if (ApexBackend.connected) {
+    ApexBackend.aiTasks.create(task_type, context, provider, model, apiKey)
+      .then(r => {
+        ApexState.aiTasks.unshift({ id: r.task_id, task_type, status: r.status, created_at: Date.now() });
+        renderAITaskHistory();
+        const result = r.result;
+        let text = '';
+        if (provider === 'anthropic') {
+          text = (result.content && result.content[0]?.text) || JSON.stringify(result, null, 2);
+        } else if (provider === 'ollama') {
+          text = result.message?.content || result.response || JSON.stringify(result, null, 2);
+        } else {
+          text = result.choices?.[0]?.message?.content || JSON.stringify(result, null, 2);
+        }
+        renderAITaskResult(text, task_type);
+        showToast('AI task complete ✓', 'success');
+        playChime();
+      })
+      .catch(e => {
+        if (outputEl) outputEl.innerHTML = `<div class="ai-task-error">Error: ${e.message}</div>`;
+        showToast(`Task failed: ${e.message}`, 'error');
+      })
+      .finally(() => {
+        ApexState.aiTaskLoading = false;
+        if (runBtn) { runBtn.disabled = false; runBtn.textContent = '▶ Run Task'; }
+      });
+  } else {
+    // Simulation fallback
+    setTimeout(() => {
+      ApexState.aiTaskLoading = false;
+      if (runBtn) { runBtn.disabled = false; runBtn.textContent = '▶ Run Task'; }
+      const simResult = `[Simulation] AI Task: ${task_type}\n\nTo get real results, connect your API keys in Settings and start the backend with:\n  npm run backend\n\nTask type: ${task_type}\nContext length: ${context.length} chars`;
+      renderAITaskResult(simResult, task_type);
+      showToast('AI task simulated (no backend)', 'warn');
+    }, 1000);
+  }
+}
+
+function renderAITaskResult(text, taskType) {
+  const outputEl = document.getElementById('ai-task-output');
+  if (!outputEl) return;
+  const escHtml = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const formatted = text.includes('```')
+    ? formatChatContent(text)
+    : `<pre style="white-space:pre-wrap;word-break:break-word">${escHtml(text)}</pre>`;
+  const taskTypeLabel = AI_TASK_TYPES.find(t => t.id === taskType)?.label || taskType;
+  const safeTaskTypeLabel = escHtml(taskTypeLabel);
+  outputEl.innerHTML = `
+    <div class="ai-task-result-header">
+      <span class="ai-task-result-label">${safeTaskTypeLabel}</span>
+      <button class="chat-code-btn" onclick="copyAITaskResult()">Copy</button>
+      <button class="chat-code-btn insert" onclick="insertAITaskResult()">Insert to Editor</button>
+    </div>
+    <div class="ai-task-result-body" id="ai-task-result-body">${formatted}</div>`;
+}
+
+function copyAITaskResult() {
+  const body = document.getElementById('ai-task-result-body');
+  if (!body) return;
+  navigator.clipboard.writeText(body.innerText).then(() => showToast('Copied', 'success')).catch(() => {});
+}
+
+function insertAITaskResult() {
+  const body = document.getElementById('ai-task-result-body');
+  if (!body || !ApexState.monacoEditor) return;
+  const text = body.innerText;
+  const editor = ApexState.monacoEditor;
+  const sel = editor.getSelection();
+  editor.executeEdits('ai-task', [{ identifier: { major: 1, minor: 1 }, range: sel, text, forceMoveMarkers: true }]);
+  showPane('editor');
+  editor.focus();
+  showToast('Inserted into editor ✓', 'success');
+}
+
+function renderAITaskHistory() {
+  const histEl = document.getElementById('ai-task-history');
+  if (!histEl) return;
+  histEl.innerHTML = '';
+  ApexState.aiTasks.slice(0, 10).forEach(t => {
+    const item = document.createElement('div');
+    item.className = `ai-task-hist-item ai-task-hist-${t.status}`;
+    item.textContent = `${AI_TASK_TYPES.find(x => x.id === t.task_type)?.label || t.task_type} — ${t.status}`;
+    histEl.appendChild(item);
+  });
+}
+
+/* ─── Workspace Telemetry ────────────────────────────────────────── */
+function refreshTelemetry() {
+  if (!ApexBackend.connected) {
+    const el = document.getElementById('telemetry-content');
+    if (el) el.innerHTML = '<div class="empty-state">Connect backend to view metrics</div>';
+    return;
+  }
+  ApexBackend.metrics()
+    .then(m => {
+      ApexState.telemetryMetrics = m;
+      renderTelemetry(m);
+    })
+    .catch(() => {});
+}
+
+function renderTelemetry(m) {
+  const el = document.getElementById('telemetry-content');
+  if (!el) return;
+  const upH = Math.floor(m.uptime_s / 3600);
+  const upM = Math.floor((m.uptime_s % 3600) / 60);
+  const upS = m.uptime_s % 60;
+  const upStr = upH ? `${upH}h ${upM}m ${upS}s` : upM ? `${upM}m ${upS}s` : `${upS}s`;
+  el.innerHTML = `
+    <div class="telemetry-grid">
+      <div class="telemetry-card"><div class="telemetry-val">${upStr}</div><div class="telemetry-label">Uptime</div></div>
+      <div class="telemetry-card"><div class="telemetry-val">${m.file_ops}</div><div class="telemetry-label">File Ops</div></div>
+      <div class="telemetry-card"><div class="telemetry-val">${m.exec_ops}</div><div class="telemetry-label">Exec Ops</div></div>
+      <div class="telemetry-card"><div class="telemetry-val">${m.llm_requests}</div><div class="telemetry-label">LLM Requests</div></div>
+      <div class="telemetry-card"><div class="telemetry-val">${m.search_queries}</div><div class="telemetry-label">Searches</div></div>
+      <div class="telemetry-card"><div class="telemetry-val">${m.memory_heap_mb} MB</div><div class="telemetry-label">Heap</div></div>
+      <div class="telemetry-card"><div class="telemetry-val">${m.memory_rss_mb} MB</div><div class="telemetry-label">RSS</div></div>
+      <div class="telemetry-card"><div class="telemetry-val">${m.workspace_count}</div><div class="telemetry-label">Workspaces</div></div>
+      <div class="telemetry-card"><div class="telemetry-val">${m.ai_task_count}</div><div class="telemetry-label">AI Tasks</div></div>
+    </div>
+    <div class="telemetry-meta">${m.node_version} · ${m.platform}</div>`;
+}
+
+/* ─── Live Session Sync (Collab) ─────────────────────────────────── */
+function startCollabSession() {
+  const sessionId = 'apex-' + Math.random().toString(36).slice(2, 10);
+  ApexState.collab.sessionId = sessionId;
+  ApexState.collab.active = true;
+  renderCollabPanel();
+  showToast(`Collab session started: ${sessionId}`, 'success');
+  termPrint('output', `[Collab] Live session started. ID: ${sessionId}`);
+  termPrint('output', '[Collab] Share this session ID with teammates to collaborate.');
+}
+
+function joinCollabSession() {
+  const idEl = document.getElementById('collab-join-id');
+  const id = idEl?.value.trim();
+  if (!id) { showToast('Enter a session ID', 'warn'); return; }
+  ApexState.collab.sessionId = id;
+  ApexState.collab.active = true;
+  renderCollabPanel();
+  showToast(`Joined session: ${id}`, 'success');
+  termPrint('output', `[Collab] Joined session: ${id}`);
+}
+
+function stopCollabSession() {
+  ApexState.collab.active = false;
+  ApexState.collab.sessionId = null;
+  ApexState.collab.peers = [];
+  renderCollabPanel();
+  showToast('Collab session ended', 'info');
+  termPrint('output', '[Collab] Session ended');
+}
+
+function renderCollabPanel() {
+  const sessionEl = document.getElementById('collab-session-info');
+  const startBtn  = document.getElementById('collab-start-btn');
+  const stopBtn   = document.getElementById('collab-stop-btn');
+  const joinArea  = document.getElementById('collab-join-area');
+  const { active, sessionId, peers } = ApexState.collab;
+
+  if (sessionEl) {
+    sessionEl.innerHTML = '';
+    if (active) {
+      const activeDiv = document.createElement('div');
+      activeDiv.className = 'collab-session-active';
+      const dot = document.createElement('span');
+      dot.className = 'collab-dot active';
+      const label = document.createElement('span');
+      label.textContent = 'Session: ';
+      const code = document.createElement('code');
+      code.textContent = sessionId;  // textContent prevents XSS
+      activeDiv.appendChild(dot);
+      activeDiv.appendChild(label);
+      activeDiv.appendChild(code);
+      const peersDiv = document.createElement('div');
+      peersDiv.className = 'collab-peers';
+      peersDiv.textContent = `${peers.length} peer(s) connected`;
+      sessionEl.appendChild(activeDiv);
+      sessionEl.appendChild(peersDiv);
+    } else {
+      sessionEl.innerHTML = '<div class="collab-session-inactive"><span class="collab-dot"></span>No active session</div>';
+    }
+  }
+  if (startBtn) startBtn.style.display = active ? 'none' : '';
+  if (stopBtn)  stopBtn.style.display  = active ? '' : 'none';
+  if (joinArea) joinArea.style.display = active ? 'none' : '';
+}
+
+
 function newFile() {
   const name = prompt('New file name:');
   if (!name) return;
@@ -1285,19 +1794,6 @@ function newFolder() {
 
 function refreshExplorer() { renderFileTree(); termPrint('output', '[Explorer] Refreshed'); }
 function saveFile() {
-  if (ApexBackend.connected && ApexState.monacoEditor && ApexState.activeFilePath) {
-    const content = ApexState.monacoEditor.getValue();
-    ApexBackend.files.write(ApexState.activeFilePath, content)
-      .then(() => {
-        termPrint('output', `[Editor] Saved: ${ApexState.activeFilePath}`);
-        log(`[INFO] Saved ${ApexState.activeFilePath}`);
-      })
-      .catch(e => termPrint('error', `[Editor] Save failed: ${e.message}`));
-  } else {
-    termPrint('output', '[Editor] File saved');
-  }
-
-function saveFile() {
   if (!ApexState.monacoEditor || ApexState.activeTab === 'welcome') {
     showToast('No file to save', 'warn');
     return;
@@ -1314,18 +1810,76 @@ function saveFile() {
       showToast('Storage full — unable to persist file. Consider clearing unused files.', 'error');
     }
   }
+  // Also write to real filesystem if backend is connected
+  if (ApexBackend.connected && ApexState.activeFilePath) {
+    ApexBackend.files.write(ApexState.activeFilePath, content)
+      .then(() => log(`[INFO] Saved ${ApexState.activeFilePath}`))
+      .catch(e => termPrint('error', `[Editor] Save failed: ${e.message}`));
+  }
   const node = ApexState.fileNodes[ApexState.activeTab];
   const fileName = node ? node.name : ApexState.activeTab;
   showToast(`Saved: ${fileName}`, 'success');
 }
 
 /* ─── Search ──────────────────────────────────────────────────────── */
+let _searchDebounce = null;
 function runSearch(query) {
   const results = document.getElementById('search-results');
   if (!query) { results.innerHTML = '<p class="empty-state">Type to search…</p>'; return; }
 
-  const useRegex = document.getElementById('search-regex')?.checked;
+  const useRegex  = document.getElementById('search-regex')?.checked;
   const matchCase = document.getElementById('search-case')?.checked;
+
+  // Use backend search when connected for real filesystem search
+  if (ApexBackend.connected) {
+    results.innerHTML = '<p class="empty-state">Searching…</p>';
+    clearTimeout(_searchDebounce);
+    _searchDebounce = setTimeout(() => {
+      ApexBackend.search(query, useRegex, matchCase)
+        .then(r => {
+          if (!r.results || r.results.length === 0) {
+            results.innerHTML = '<p class="empty-state">No results found</p>';
+            return;
+          }
+          results.innerHTML = '';
+          r.results.forEach(m => {
+            const item = document.createElement('div');
+            item.className = 'search-result-file';
+            item.innerHTML = `<span class="search-result-file-name">${getFileIcon(m.file)} </span><span class="search-content-badge">${m.total} match${m.total !== 1 ? 'es' : ''}</span>`;
+            const fileNameSpan = item.querySelector('.search-result-file-name');
+            if (fileNameSpan) {
+              fileNameSpan.appendChild(document.createTextNode(m.file));
+            }
+            const matchList = document.createElement('div');
+            matchList.className = 'search-result-matches';
+            m.matches.forEach(({ line, text }) => {
+              const lineEl = document.createElement('div');
+              lineEl.className = 'search-result-line';
+              lineEl.textContent = `  ${line}: ${text.trim()}`;
+              lineEl.onclick = () => {
+                const node = ApexState.fileNodes[getFileId(m.file.split('/').pop())] || { name: m.file, type: 'file', backendPath: m.file };
+                openFileTab(node);
+              };
+              matchList.appendChild(lineEl);
+            });
+            item.appendChild(matchList);
+            results.appendChild(item);
+          });
+        })
+        .catch(err => {
+          results.innerHTML = `<p class="empty-state">Search error: ${err.message}</p>`;
+          // Fall back to local search
+          _runLocalSearch(query, useRegex, matchCase, results);
+        });
+    }, 300);
+    return;
+  }
+
+  // Local fallback search
+  _runLocalSearch(query, useRegex, matchCase, results);
+}
+
+function _runLocalSearch(query, useRegex, matchCase, results) {
   const q = matchCase ? query : query.toLowerCase();
   let re = null;
   if (useRegex) {
@@ -1343,11 +1897,11 @@ function runSearch(query) {
   function collectFiles(nodes, prefix) {
     let out = [];
     (nodes || []).forEach(n => {
-      const path = prefix ? prefix + '/' + n.name : n.name;
+      const itemPath = prefix ? prefix + '/' + n.name : n.name;
       if (n.type === 'folder' && n.children) {
-        out = out.concat(collectFiles(n.children, path));
+        out = out.concat(collectFiles(n.children, itemPath));
       } else if (n.type === 'file') {
-        out.push({ path, node: n });
+        out.push({ path: itemPath, node: n });
       }
     });
     return out;
@@ -1356,16 +1910,16 @@ function runSearch(query) {
 
   // Search in file names and file content buffers
   const matches = [];
-  allFiles.forEach(({ path, node }) => {
-    const nameToCheck = matchCase ? path : path.toLowerCase();
-    const nameMatch = re ? (re.lastIndex = 0, re.test(path)) : nameToCheck.includes(q);
+  allFiles.forEach(({ path: itemPath, node }) => {
+    const nameToCheck = matchCase ? itemPath : itemPath.toLowerCase();
+    const nameMatch = re ? (re.lastIndex = 0, re.test(itemPath)) : nameToCheck.includes(q);
     // Also search stored buffer content
     const fileId = getFileId(node.name);
     const content = ApexState.fileBuffers?.[fileId] || '';
     const contentToCheck = matchCase ? content : content.toLowerCase();
     const contentMatch = content && (re ? (re.lastIndex = 0, re.test(content)) : contentToCheck.includes(q));
     if (nameMatch || contentMatch) {
-      matches.push({ path, node, contentMatch });
+      matches.push({ path: itemPath, node, contentMatch });
     }
   });
 
@@ -2334,6 +2888,67 @@ function formatDocument() {
     termPrint('warn', '[Editor] Monaco not loaded yet');
   }
 }
+
+function searchSymbolsInFile() {
+  const node = ApexState.fileNodes[ApexState.activeTab];
+  if (!node) { showToast('Open a file to search symbols', 'warn'); return; }
+
+  if (ApexBackend.connected && node.backendPath) {
+    ApexBackend.symbols(node.backendPath)
+      .then(r => {
+        if (!r.symbols || r.symbols.length === 0) {
+          showToast('No symbols found in this file', 'info'); return;
+        }
+        // Show in command palette style
+        const query = prompt(`${r.symbols.length} symbols found. Filter (leave blank for all):`);
+        const filtered = query
+          ? r.symbols.filter(s => s.name.toLowerCase().includes(query.toLowerCase()))
+          : r.symbols;
+        if (!filtered.length) { showToast('No matching symbols', 'info'); return; }
+        // Show in output log
+        log(`[Symbols] ${node.name} — ${filtered.length} symbol(s)`);
+        filtered.forEach(s => log(`  ${s.kind.padEnd(10)} ${s.name}  (line ${s.line})`));
+        // Jump to first match in editor
+        const chosen = filtered[0];
+        if (ApexState.monacoEditor) {
+          ApexState.monacoEditor.revealLineInCenter(chosen.line);
+          ApexState.monacoEditor.setPosition({ lineNumber: chosen.line, column: 1 });
+          ApexState.monacoEditor.focus();
+        }
+        // Switch to output tab to show results
+        const outputTab = document.querySelector('.bottom-tab[onclick*="output"]');
+        if (outputTab) switchBottomTab('output', outputTab);
+        showToast(`Found ${filtered.length} symbol(s)`, 'success');
+      })
+      .catch(e => showToast(`Symbol search failed: ${e.message}`, 'error'));
+  } else {
+    // Local symbol extraction using regex on buffer content
+    const fileId = getFileId(node.name);
+    const content = ApexState.fileBuffers[fileId] || ApexState.monacoEditor?.getValue() || '';
+    if (!content.trim()) { showToast('No content to search symbols', 'warn'); return; }
+    const patterns = [
+      { re: /(?:^|\s)(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/gm, kind: 'function' },
+      { re: /(?:^|\s)class\s+([A-Za-z_$][A-Za-z0-9_$]*)/gm,                       kind: 'class' },
+    ];
+    const symbols = [];
+    const lines = content.split('\n');
+    patterns.forEach(({ re, kind }) => {
+      let m;
+      re.lastIndex = 0;
+      while ((m = re.exec(content)) !== null) {
+        const ln = content.slice(0, m.index).split('\n').length;
+        symbols.push({ name: m[1], kind, line: ln });
+      }
+    });
+    if (!symbols.length) { showToast('No symbols found', 'info'); return; }
+    log(`[Symbols] ${node.name} — ${symbols.length} symbol(s) (local)`);
+    symbols.forEach(s => log(`  ${s.kind.padEnd(10)} ${s.name}  (line ${s.line})`));
+    const outputTab = document.querySelector('.bottom-tab[onclick*="output"]');
+    if (outputTab) switchBottomTab('output', outputTab);
+    showToast(`Found ${symbols.length} symbol(s)`, 'success');
+  }
+}
+
 
 function goToLine() {
   if (ApexState.monacoEditor) {
@@ -3365,6 +3980,9 @@ document.addEventListener('keydown', e => {
   if (ctrl && e.shiftKey && e.key === 'C') { e.preventDefault(); switchActivity('cli'); return; }
   if (ctrl && e.shiftKey && e.key === 'M') { e.preventDefault(); switchActivity('mcp'); return; }
   if (ctrl && e.shiftKey && e.key === 'L') { e.preventDefault(); switchActivity('logic-mode'); return; }
+  if (ctrl && e.shiftKey && e.key === 'W') { e.preventDefault(); switchActivity('workspaces'); return; }
+  if (ctrl && e.shiftKey && e.key === 'A') { e.preventDefault(); switchActivity('ai-tasks'); return; }
+  if (ctrl && e.shiftKey && e.key === 'O') { e.preventDefault(); searchSymbolsInFile(); return; }
   if (ctrl && e.altKey && !e.shiftKey && e.key.toLowerCase() === 'v') { e.preventDefault(); openVisualizerTab(); return; }
   if (ctrl && e.shiftKey && e.key === 'J') { e.preventDefault(); switchActivity('chat'); return; }
   if (ctrl && e.key === 'm' && !e.shiftKey) { e.preventDefault(); switchActivity('music-player'); return; }
