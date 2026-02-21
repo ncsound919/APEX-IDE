@@ -423,15 +423,15 @@
               <div class="mcp-add-form">
                 <input type="text" class="mcp-input" id="mcp-server-name" placeholder="Server name…" />
                 <input type="text" class="mcp-input" id="mcp-server-cmd" placeholder="Command or URL…" />
-                <label class="mcp-folder-row">
+                <div class="mcp-folder-row">
                   <span class="mcp-folder-label-text">📁 Folder</span>
-                  <label class="mcp-folder-pick-btn">
+                  <label class="mcp-folder-pick-btn" for="mcp-server-folder">
                     Browse
-                    <input type="file" id="mcp-server-folder" style="display:none" webkitdirectory multiple
-                           onchange="document.getElementById('mcp-server-folder-name').textContent=this.files.length?this.files[0].webkitRelativePath.split('/')[0]:'No folder selected'" />
                   </label>
+                  <input type="file" id="mcp-server-folder" style="display:none" webkitdirectory multiple
+                         onchange="document.getElementById('mcp-server-folder-name').textContent=this.files.length?this.files[0].webkitRelativePath.split('/')[0]:'No folder selected'" />
                   <span class="mcp-folder-name" id="mcp-server-folder-name">No folder selected</span>
-                </label>
+                </div>
                 <button class="btn-primary mcp-add-btn" onclick="addMCPServer()">+ Add Server</button>
               </div>
             </div>
