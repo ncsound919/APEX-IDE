@@ -549,13 +549,18 @@ function showMonacoPaneFor(node) {
       const oldModel = ApexState.monacoEditor.getModel();
       const model = monaco.editor.createModel(text, lang);
       ApexState.monacoEditor.setModel(model);
-      // Store path for save
-      if (!Object.prototype.hasOwnProperty.call(ApexState, 'activeFilePath')) {
-        ApexState.activeFilePath = null;
+      try {
+        const oldModel = ApexState.monacoEditor.getModel();
+        const model = monaco.editor.createModel(text, lang);
+        ApexState.monacoEditor.setModel(model);
+        // Store path for save
+        ApexState.activeFilePath = node.backendPath || node.name;
+        if (oldModel && oldModel !== model) oldModel.dispose();
+        document.getElementById('status-lang').textContent = lang.charAt(0).toUpperCase() + lang.slice(1);
+      } catch (err) {
+        // Log errors related to Monaco model creation or disposal
+        console.error('Failed to update Monaco editor model:', err);
       }
-      ApexState.activeFilePath = node.backendPath || node.name;
-      if (oldModel && oldModel !== model) oldModel.dispose();
-      document.getElementById('status-lang').textContent = lang.charAt(0).toUpperCase() + lang.slice(1);
     };
 
     // Load real content if backend is connected
