@@ -723,10 +723,8 @@ function runInspiredFeature(feature) {
     'windsurf-flow':        '[Inspired] Windsurf Flow Mode → Streaming paired plan + edits with checkpoint updates…',
   };
   termPrint('output', msgs[feature] || `[Inspired] Running ${feature}…`);
-  const terminalTabBtn =
-    document.querySelector('.bottom-tab[data-tab="terminal"]') ||
-    document.querySelector('.bottom-tab');
-  switchBottomTab('terminal', terminalTabBtn);
+  const terminalTabBtn = document.querySelector('.bottom-tab[data-tab="terminal"]');
+  if (terminalTabBtn) switchBottomTab('terminal', terminalTabBtn);
 }
 
 function startOllama() {
