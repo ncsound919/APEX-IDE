@@ -22,6 +22,7 @@ const ApexState = {
   commandList: [],
   monacoEditor: null,
   minimapEnabled: true,
+  _codeBlockCounter: 0,
   providers: {
     openai:    { name: 'OpenAI GPT-4o',      status: 'online',   latency: 124 },
     claude:    { name: 'Claude 3.5 Sonnet',  status: 'online',   latency: 89  },
@@ -928,6 +929,12 @@ function toggleMinimap() {
   if (ApexState.monacoEditor) {
     ApexState.minimapEnabled = !ApexState.minimapEnabled;
     ApexState.monacoEditor.updateOptions({ minimap: { enabled: ApexState.minimapEnabled } });
+    // Persist preference
+    try {
+      const state = JSON.parse(localStorage.getItem('apex_state') || '{}');
+      state.minimapEnabled = ApexState.minimapEnabled;
+      localStorage.setItem('apex_state', JSON.stringify(state));
+    } catch (_) {}
     termPrint('output', `[Editor] Minimap: ${ApexState.minimapEnabled ? 'ON' : 'OFF'}`);
   }
 }
@@ -1096,7 +1103,7 @@ function formatChatContent(text) {
       const lines = part.slice(3, -3).split('\n');
       const lang = lines[0].trim() || 'code';
       const code = escapeHtml(lines.slice(1).join('\n').trim());
-      const blockId = 'cb-' + Math.random().toString(36).slice(2, 8);
+      const blockId = 'cb-' + (++ApexState._codeBlockCounter);
       return `<div class="chat-code-block" id="${blockId}">
         <div class="chat-code-header">
           <span class="chat-code-lang">${escapeHtml(lang)}</span>
@@ -1250,7 +1257,7 @@ function askAboutCode() {
     termPrint('warn', '[AI] Select code in the editor first');
     return;
   }
-  const lang = document.getElementById('status-lang')?.textContent?.toLowerCase() || 'code';
+  const lang = document.getElementById('status-lang')?.textContent?.toLowerCase() || 'javascript';
   const chatInput = document.getElementById('chat-input');
   if (chatInput) chatInput.value = `\`\`\`${lang}\n${code}\n\`\`\`\n\n`;
   switchActivity('chat');
@@ -1322,18 +1329,22 @@ window.addEventListener('DOMContentLoaded', () => {
         if (Array.isArray(s.terminalHistory)) {
           ApexState.terminalHistory = s.terminalHistory;
         }
+        if (typeof s.minimapEnabled === 'boolean') {
+          ApexState.minimapEnabled = s.minimapEnabled;
+        }
+        // Restore all API keys from nested keys object
+        if (s.keys && typeof s.keys === 'object') {
+          if (!ApexState.keys) ApexState.keys = {};
+          ['openai', 'anthropic', 'deepseek', 'ollama'].forEach(k => {
+            if (s.keys[k] != null) ApexState.keys[k] = s.keys[k];
+          });
+        }
         // Restore ollama endpoint: persisted as top-level `ollama`, used as `keys.ollama`
         if (s.ollama != null) {
           if (!ApexState.keys || typeof ApexState.keys !== 'object') {
             ApexState.keys = {};
           }
           ApexState.keys.ollama = s.ollama;
-        } else if (s.keys && s.keys.ollama != null) {
-          // Also handle case where it was already nested under keys
-          if (!ApexState.keys || typeof ApexState.keys !== 'object') {
-            ApexState.keys = {};
-          }
-          ApexState.keys.ollama = s.keys.ollama;
         }
       }
     } catch (_) { /* ignore */ }
