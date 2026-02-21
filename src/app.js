@@ -1198,7 +1198,11 @@ async function callLLMAPI(history, model, systemPrompt) {
       throw new Error(err.error?.message || `Anthropic API error ${res.status}`);
     }
     const data = await res.json();
-    return data.content[0].text;
+    const firstContentItem = Array.isArray(data.content) && data.content.length > 0 ? data.content[0] : null;
+    if (!firstContentItem || typeof firstContentItem.text !== 'string') {
+      throw new Error('Anthropic API returned unexpected response structure');
+    }
+    return firstContentItem.text;
   }
 
   // DeepSeek (OpenAI-compatible)
