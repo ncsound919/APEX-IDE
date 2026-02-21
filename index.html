@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>APEX IDE — Megacode Edition</title>
+  <link rel="stylesheet" href="src/styles.css" />
+  <!-- Monaco Editor -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
+</head>
+<body>
+  <!-- ═══════════════════════════════════════ ONBOARDING WIZARD ═════════════════════════════════════════ -->
+  <div id="onboarding-overlay" class="onboarding-overlay">
+    <div class="onboarding-modal">
+      <div class="onboarding-header">
+        <span class="apex-logo">⬡ APEX</span>
+        <span class="onboarding-tagline">MEGACODE EDITION</span>
+      </div>
+      <div class="onboarding-steps">
+        <!-- Step 1 -->
+        <div class="onboarding-step active" id="step-1">
+          <h2>Welcome to APEX IDE 🎤</h2>
+          <p>The hip-hop powered desktop IDE for elite coders. Let's get you set up.</p>
+          <div class="form-group">
+            <label>Your Name / Handle</label>
+            <input type="text" id="user-handle" placeholder="e.g. NCSoundKing" />
+          </div>
+          <div class="form-group">
+            <label>Mode</label>
+            <div class="mode-toggle">
+              <button class="mode-btn active" data-mode="rookie" onclick="selectMode('rookie',this)">🥊 Rookie</button>
+              <button class="mode-btn" data-mode="expert" onclick="selectMode('expert',this)">🔥 Expert</button>
+            </div>
+          </div>
+          <button class="btn-primary" onclick="nextStep(2)">Next ›</button>
+        </div>
+        <!-- Step 2 -->
+        <div class="onboarding-step" id="step-2">
+          <h2>LLM Provider Keys 🔑</h2>
+          <p>Connect your AI providers. Keys are stored locally — never sent to our servers.</p>
+          <div class="form-group">
+            <label>OpenAI API Key</label>
+            <input type="password" id="key-openai" placeholder="sk-..." />
+          </div>
+          <div class="form-group">
+            <label>Anthropic (Claude) API Key</label>
+            <input type="password" id="key-anthropic" placeholder="sk-ant-..." />
+          </div>
+          <div class="form-group">
+            <label>DeepSeek API Key</label>
+            <input type="password" id="key-deepseek" placeholder="ds-..." />
+          </div>
+          <div class="form-group">
+            <label>Ollama Endpoint (local)</label>
+            <input type="text" id="key-ollama" placeholder="http://localhost:11434" value="http://localhost:11434" />
+          </div>
+          <div class="btn-row">
+            <button class="btn-secondary" onclick="nextStep(1)">‹ Back</button>
+            <button class="btn-primary" onclick="nextStep(3)">Next ›</button>
+          </div>
+        </div>
+        <!-- Step 3 -->
+        <div class="onboarding-step" id="step-3">
+          <h2>Import Your Project 📁</h2>
+          <p>Load an existing project or start fresh.</p>
+          <div class="form-group">
+            <label>Project Name</label>
+            <input type="text" id="project-name" placeholder="e.g. Overlay365, Cheetah" />
+          </div>
+          <div class="form-group">
+            <label>Project Type</label>
+            <select id="project-type">
+              <option value="general">General / Full-Stack</option>
+              <option value="music">🎵 Music Production</option>
+              <option value="biotech">🧬 Biotech / Research</option>
+              <option value="graphic-novel">🎨 Graphic Novels / NFTs</option>
+            </select>
+          </div>
+          <div class="btn-row">
+            <button class="btn-secondary" onclick="nextStep(2)">‹ Back</button>
+            <button class="btn-primary" onclick="finishOnboarding()">Launch APEX 🚀</button>
+          </div>
+        </div>
+      </div>
+      <div class="onboarding-progress">
+        <span class="dot active" onclick="nextStep(1)"></span>
+        <span class="dot" onclick="nextStep(2)"></span>
+        <span class="dot" onclick="nextStep(3)"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════ MAIN APP ═══════════════════════════════════════ -->
+  <div id="app" class="app hidden">
+    <!-- TOP BAR -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="apex-logo-small">⬡ APEX</span>
+        <nav class="menu-bar">
+          <button class="menu-item" onclick="openMenu('file')">File</button>
+          <button class="menu-item" onclick="openMenu('edit')">Edit</button>
+          <button class="menu-item" onclick="openMenu('view')">View</button>
+          <button class="menu-item" onclick="openMenu('run')">Run</button>
+          <button class="menu-item" onclick="openMenu('megacode')">Megacode</button>
+        </nav>
+      </div>
+      <div class="topbar-center">
+        <div class="search-bar" onclick="openCommandPalette()">
+          <span class="search-icon">⌘</span>
+          <span class="search-placeholder">Search files, commands… (Ctrl+P)</span>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="provider-status" id="provider-status">
+          <span class="provider-dot green" title="OpenAI Online"></span>
+          <span class="provider-dot green" title="Claude Online"></span>
+          <span class="provider-dot yellow" title="DeepSeek Degraded"></span>
+          <span class="provider-dot red" title="Ollama Offline"></span>
+        </div>
+        <button class="topbar-btn" onclick="togglePanel('vibe-layer')" title="Vibe Layer">🎯</button>
+        <button class="topbar-btn" onclick="togglePanel('monetization')" title="Monetization">💰</button>
+        <span class="user-badge" id="user-badge">👤 User</span>
+        <button class="topbar-btn mode-indicator" id="mode-indicator" onclick="toggleExpertMode()" title="Toggle Mode">🥊 Rookie</button>
+      </div>
+    </header>
+
+    <!-- MAIN LAYOUT -->
+    <div class="workspace">
+      <!-- ACTIVITY BAR (left) -->
+      <aside class="activity-bar">
+        <button class="activity-btn active" data-panel="explorer" onclick="switchActivity('explorer',this)" title="File Explorer">📁</button>
+        <button class="activity-btn" data-panel="search" onclick="switchActivity('search',this)" title="Search">🔍</button>
+        <button class="activity-btn" data-panel="git" onclick="switchActivity('git',this)" title="Git">⎇</button>
+        <button class="activity-btn" data-panel="llm-router" onclick="switchActivity('llm-router',this)" title="LLM Router">🧠</button>
+        <button class="activity-btn" data-panel="ide-bridge" onclick="switchActivity('ide-bridge',this)" title="IDE Bridge">⚡</button>
+        <button class="activity-btn" data-panel="domains" onclick="switchActivity('domains',this)" title="Domain Adapters">🎛️</button>
+        <div class="activity-spacer"></div>
+        <button class="activity-btn" data-panel="settings" onclick="switchActivity('settings',this)" title="Settings">⚙️</button>
+      </aside>
+
+      <!-- SIDEBAR PANELS -->
+      <aside class="sidebar" id="sidebar">
+        <!-- File Explorer Panel -->
+        <div class="panel active" id="panel-explorer">
+          <div class="panel-header">
+            <span>EXPLORER</span>
+            <div class="panel-actions">
+              <button class="icon-btn" onclick="newFile()" title="New File">📄+</button>
+              <button class="icon-btn" onclick="newFolder()" title="New Folder">📁+</button>
+              <button class="icon-btn" onclick="refreshExplorer()" title="Refresh">↻</button>
+            </div>
+          </div>
+          <div class="file-tree" id="file-tree"></div>
+        </div>
+
+        <!-- Search Panel -->
+        <div class="panel" id="panel-search">
+          <div class="panel-header"><span>SEARCH</span></div>
+          <div class="search-input-group">
+            <input type="text" class="search-input" id="search-query" placeholder="Search in files…" oninput="runSearch(this.value)" />
+            <label class="search-option"><input type="checkbox" id="search-regex" /> Regex</label>
+            <label class="search-option"><input type="checkbox" id="search-case" /> Match Case</label>
+          </div>
+          <div class="search-results" id="search-results"><p class="empty-state">Type to search…</p></div>
+        </div>
+
+        <!-- Git Panel -->
+        <div class="panel" id="panel-git">
+          <div class="panel-header"><span>SOURCE CONTROL</span></div>
+          <div class="git-status" id="git-status">
+            <div class="git-section">
+              <div class="git-section-header">CHANGES (3)</div>
+              <div class="git-file modified">M src/app.js</div>
+              <div class="git-file added">A src/new-feature.js</div>
+              <div class="git-file deleted">D old-file.js</div>
+            </div>
+          </div>
+          <div class="git-commit">
+            <input type="text" class="commit-input" placeholder="Commit message (Ctrl+Enter)" />
+            <button class="btn-commit" onclick="gitCommit()">✓ Commit</button>
+          </div>
+          <div class="git-actions">
+            <button class="git-action-btn" onclick="gitPull()">↓ Pull</button>
+            <button class="git-action-btn" onclick="gitPush()">↑ Push</button>
+            <button class="git-action-btn" onclick="gitBranch()">⎇ Branch</button>
+          </div>
+        </div>
+
+        <!-- LLM Router Panel -->
+        <div class="panel" id="panel-llm-router">
+          <div class="panel-header"><span>LLM ROUTER</span></div>
+          <div class="llm-router-panel">
+            <div class="router-section">
+              <div class="section-label">PROVIDER HEALTH</div>
+              <div class="provider-card online">
+                <div class="provider-name">OpenAI GPT-4o</div>
+                <div class="provider-stats">
+                  <span class="stat-pill green">● Online</span>
+                  <span class="stat-val">124ms</span>
+                </div>
+              </div>
+              <div class="provider-card online">
+                <div class="provider-name">Claude 3.5 Sonnet</div>
+                <div class="provider-stats">
+                  <span class="stat-pill green">● Online</span>
+                  <span class="stat-val">89ms</span>
+                </div>
+              </div>
+              <div class="provider-card degraded">
+                <div class="provider-name">DeepSeek Coder</div>
+                <div class="provider-stats">
+                  <span class="stat-pill yellow">● Degraded</span>
+                  <span class="stat-val">412ms</span>
+                </div>
+              </div>
+              <div class="provider-card offline">
+                <div class="provider-name">Ollama (Local)</div>
+                <div class="provider-stats">
+                  <span class="stat-pill red">● Offline</span>
+                  <button class="failover-btn" onclick="startOllama()">Start</button>
+                </div>
+              </div>
+            </div>
+            <div class="router-section">
+              <div class="section-label">CACHE HIT RATE</div>
+              <div class="cache-bar-wrap">
+                <div class="cache-label">Prompt Cache</div>
+                <div class="progress-bar"><div class="progress-fill" style="width:67%"></div></div>
+                <span class="progress-val">67%</span>
+              </div>
+              <div class="cache-bar-wrap">
+                <div class="cache-label">Response Cache</div>
+                <div class="progress-bar"><div class="progress-fill amber" style="width:43%"></div></div>
+                <span class="progress-val">43%</span>
+              </div>
+            </div>
+            <div class="router-section">
+              <div class="section-label">TOKEN USAGE (TODAY)</div>
+              <div class="token-usage-chart" id="token-chart"></div>
+              <div class="token-totals">
+                <span>Input: <strong>1.2M</strong></span>
+                <span>Output: <strong>340K</strong></span>
+                <span>Cost: <strong>$4.18</strong></span>
+              </div>
+            </div>
+            <div class="router-section">
+              <div class="section-label">FAILOVER</div>
+              <label class="toggle-row">
+                <span>Auto-failover</span>
+                <input type="checkbox" class="toggle-switch" checked />
+              </label>
+              <label class="toggle-row">
+                <span>Offline-first (Ollama)</span>
+                <input type="checkbox" class="toggle-switch" />
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- IDE Bridge Hub Panel -->
+        <div class="panel" id="panel-ide-bridge">
+          <div class="panel-header"><span>IDE BRIDGE HUB</span></div>
+          <div class="ide-bridge-panel">
+            <div class="bridge-section">
+              <div class="section-label">ACTIVE BRIDGES</div>
+              <div class="bridge-card active">
+                <span class="bridge-icon">💙</span>
+                <div class="bridge-info">
+                  <div class="bridge-name">VSCode</div>
+                  <div class="bridge-status">Connected · Port 9742</div>
+                </div>
+                <button class="bridge-toggle on" onclick="toggleBridge('vscode',this)">ON</button>
+              </div>
+              <div class="bridge-card">
+                <span class="bridge-icon">⚫</span>
+                <div class="bridge-info">
+                  <div class="bridge-name">Zed</div>
+                  <div class="bridge-status">Inactive</div>
+                </div>
+                <button class="bridge-toggle off" onclick="toggleBridge('zed',this)">OFF</button>
+              </div>
+              <div class="bridge-card">
+                <span class="bridge-icon">🟣</span>
+                <div class="bridge-info">
+                  <div class="bridge-name">Cursor</div>
+                  <div class="bridge-status">Inactive</div>
+                </div>
+                <button class="bridge-toggle off" onclick="toggleBridge('cursor',this)">OFF</button>
+              </div>
+              <div class="bridge-card">
+                <span class="bridge-icon">🔴</span>
+                <div class="bridge-info">
+                  <div class="bridge-name">JetBrains (HTTP Proxy)</div>
+                  <div class="bridge-status">Port 9744</div>
+                </div>
+                <button class="bridge-toggle off" onclick="toggleBridge('jetbrains',this)">OFF</button>
+              </div>
+            </div>
+            <div class="bridge-section">
+              <div class="section-label">QUALITY SCORES (LIVE)</div>
+              <div class="quality-scores" id="quality-scores">
+                <div class="quality-row">
+                  <span class="quality-file">src/app.js</span>
+                  <div class="quality-bar-wrap">
+                    <div class="quality-bar" style="width:88%"></div>
+                  </div>
+                  <span class="quality-val">88</span>
+                </div>
+                <div class="quality-row">
+                  <span class="quality-file">src/router.js</span>
+                  <div class="quality-bar-wrap">
+                    <div class="quality-bar amber" style="width:62%"></div>
+                  </div>
+                  <span class="quality-val">62</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Domain Adapters Panel -->
+        <div class="panel" id="panel-domains">
+          <div class="panel-header"><span>DOMAIN ADAPTERS</span></div>
+          <div class="domain-tabs">
+            <button class="domain-tab active" onclick="switchDomain('music',this)">🎵 Music</button>
+            <button class="domain-tab" onclick="switchDomain('biotech',this)">🧬 Biotech</button>
+            <button class="domain-tab" onclick="switchDomain('gfx',this)">🎨 GFX</button>
+          </div>
+          <!-- Music -->
+          <div class="domain-content active" id="domain-music">
+            <div class="section-label">MUSIC PRODUCTION</div>
+            <button class="domain-action-btn" onclick="runTool('daw-scaffold')">🎹 DAW Plugin Scaffolder</button>
+            <button class="domain-action-btn" onclick="runTool('audio-preview')">🔊 Audio Preview (WebAudio)</button>
+            <button class="domain-action-btn" onclick="runTool('beat-runner')">🥁 Beat Script Runner (Ollama)</button>
+            <div class="audio-visualizer" id="audio-visualizer">
+              <canvas id="audio-canvas" width="200" height="60"></canvas>
+            </div>
+          </div>
+          <!-- Biotech -->
+          <div class="domain-content" id="domain-biotech">
+            <div class="section-label">BIOTECH / RESEARCH</div>
+            <button class="domain-action-btn" onclick="runTool('smiles')">⚗️ PubChem/SMILES Visualizer</button>
+            <button class="domain-action-btn" onclick="runTool('histotripsy')">🧠 Histotripsy Sim Console</button>
+            <button class="domain-action-btn" onclick="runTool('mutracker')">🔬 Mutation Tracker (MuTracker)</button>
+            <div class="smiles-preview" id="smiles-preview">
+              <div class="empty-state">Enter SMILES string to visualize…</div>
+            </div>
+          </div>
+          <!-- Graphic Novels -->
+          <div class="domain-content" id="domain-gfx">
+            <div class="section-label">GRAPHIC NOVELS / NFTs</div>
+            <button class="domain-action-btn" onclick="runTool('nft-mint')">🪙 NFT Mint Preview</button>
+            <button class="domain-action-btn" onclick="runTool('panel-editor')">🖼️ Panel Layout Editor</button>
+            <button class="domain-action-btn" onclick="runTool('gemini-vision')">👁️ Gemini Vision Storyboard</button>
+          </div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div class="panel" id="panel-settings">
+          <div class="panel-header"><span>SETTINGS</span></div>
+          <div class="settings-panel">
+            <div class="settings-section">
+              <div class="section-label">APPEARANCE</div>
+              <label class="settings-row">
+                <span>Theme</span>
+                <select onchange="changeTheme(this.value)">
+                  <option value="hiphop-dark">Hip-Hop Dark</option>
+                  <option value="hiphop-light">Hip-Hop Light</option>
+                  <option value="midnight">Midnight</option>
+                </select>
+              </label>
+              <label class="settings-row">
+                <span>Font Size</span>
+                <input type="number" value="14" min="10" max="24" onchange="changeFontSize(this.value)" />
+              </label>
+            </div>
+            <div class="settings-section">
+              <div class="section-label">EDITOR</div>
+              <label class="toggle-row">
+                <span>Vim Keybindings</span>
+                <input type="checkbox" class="toggle-switch" id="vim-mode" onchange="toggleVimMode(this.checked)" />
+              </label>
+              <label class="toggle-row">
+                <span>Word Wrap</span>
+                <input type="checkbox" class="toggle-switch" checked />
+              </label>
+              <label class="toggle-row">
+                <span>Minimap</span>
+                <input type="checkbox" class="toggle-switch" checked />
+              </label>
+            </div>
+            <div class="settings-section">
+              <div class="section-label">MEGACODE BRIDGES</div>
+              <label class="settings-row">
+                <span>Bridge Port (Primary)</span>
+                <input type="number" value="9742" />
+              </label>
+              <label class="settings-row">
+                <span>Bridge Port (Secondary)</span>
+                <input type="number" value="9744" />
+              </label>
+            </div>
+            <div class="settings-section">
+              <div class="section-label">PERFORMANCE</div>
+              <label class="toggle-row">
+                <span>Lazy Modules</span>
+                <input type="checkbox" class="toggle-switch" checked />
+              </label>
+              <label class="toggle-row">
+                <span>Virtual Scrolling</span>
+                <input type="checkbox" class="toggle-switch" checked />
+              </label>
+              <label class="toggle-row">
+                <span>Offline-First (Ollama)</span>
+                <input type="checkbox" class="toggle-switch" />
+              </label>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- MAIN EDITOR AREA -->
+      <main class="editor-area" id="editor-area">
+        <!-- EDITOR TABS -->
+        <div class="editor-tabs" id="editor-tabs">
+          <div class="tab active" data-file="welcome" onclick="openTab('welcome',this)">
+            <span class="tab-icon">🏠</span>
+            <span class="tab-name">Welcome</span>
+            <button class="tab-close" onclick="closeTab(event,'welcome')">×</button>
+          </div>
+          <button class="tab-add" onclick="newFile()" title="New File">+</button>
+        </div>
+
+        <!-- EDITOR PANES -->
+        <div class="editor-panes" id="editor-panes">
+          <!-- Welcome Tab Content -->
+          <div class="editor-pane active" id="pane-welcome">
+            <div class="welcome-screen">
+              <div class="welcome-hero">
+                <div class="welcome-logo">⬡</div>
+                <h1 class="welcome-title">APEX IDE</h1>
+                <p class="welcome-subtitle">MEGACODE EDITION — <em>Where Code Meets Culture</em></p>
+              </div>
+              <div class="welcome-grid">
+                <div class="welcome-card" onclick="newFile()">
+                  <div class="welcome-card-icon">📄</div>
+                  <div class="welcome-card-title">New File</div>
+                  <div class="welcome-card-desc">Start coding something fresh</div>
+                </div>
+                <div class="welcome-card" onclick="openFolder()">
+                  <div class="welcome-card-icon">📁</div>
+                  <div class="welcome-card-title">Open Folder</div>
+                  <div class="welcome-card-desc">Load an existing project</div>
+                </div>
+                <div class="welcome-card" onclick="cloneRepo()">
+                  <div class="welcome-card-icon">⎇</div>
+                  <div class="welcome-card-title">Clone Repo</div>
+                  <div class="welcome-card-desc">Pull from GitHub or GitLab</div>
+                </div>
+                <div class="welcome-card" onclick="openCommandPalette()">
+                  <div class="welcome-card-icon">⌘</div>
+                  <div class="welcome-card-title">Command Palette</div>
+                  <div class="welcome-card-desc">Ctrl+P for all commands</div>
+                </div>
+              </div>
+              <div class="welcome-recents">
+                <h3>Recent Projects</h3>
+                <div class="recent-list" id="recent-list">
+                  <div class="recent-item">
+                    <span class="recent-icon">📦</span>
+                    <div class="recent-info">
+                      <div class="recent-name">Overlay365</div>
+                      <div class="recent-path">~/projects/overlay365</div>
+                    </div>
+                  </div>
+                  <div class="recent-item">
+                    <span class="recent-icon">📦</span>
+                    <div class="recent-info">
+                      <div class="recent-name">Cheetah</div>
+                      <div class="recent-path">~/projects/cheetah</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="welcome-shortcuts">
+                <h3>Quick Keys</h3>
+                <div class="shortcut-grid">
+                  <span class="shortcut"><kbd>Ctrl+P</kbd> Command Palette</span>
+                  <span class="shortcut"><kbd>Ctrl+`</kbd> Terminal</span>
+                  <span class="shortcut"><kbd>Ctrl+B</kbd> Toggle Sidebar</span>
+                  <span class="shortcut"><kbd>Ctrl+Shift+E</kbd> Explorer</span>
+                  <span class="shortcut"><kbd>Ctrl+Shift+F</kbd> Search</span>
+                  <span class="shortcut"><kbd>Ctrl+Shift+G</kbd> Git</span>
+                  <span class="shortcut"><kbd>Ctrl+\\</kbd> Split Editor</span>
+                  <span class="shortcut"><kbd>Ctrl+Z</kbd> Undo</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Monaco Editor Tab (for code files) -->
+          <div class="editor-pane" id="pane-editor">
+            <div id="monaco-container" style="width:100%;height:100%;"></div>
+          </div>
+        </div>
+      </main>
+
+      <!-- RIGHT PANELS (Vibe Layer & Monetization) -->
+      <aside class="right-panel hidden" id="panel-vibe-layer">
+        <div class="panel-header">
+          <span>VIBE LAYER 🎯</span>
+          <button class="icon-btn" onclick="togglePanel('vibe-layer')">✕</button>
+        </div>
+        <div class="vibe-panel">
+          <div class="vibe-section">
+            <div class="section-label">CONFIDENCE / INTENT</div>
+            <div class="vibe-score-row">
+              <span>Confidence</span>
+              <div class="vibe-bar-wrap">
+                <div class="vibe-bar" id="confidence-bar" style="width:82%"></div>
+              </div>
+              <span class="vibe-val" id="confidence-val">82%</span>
+            </div>
+            <div class="vibe-score-row">
+              <span>Intent Clarity</span>
+              <div class="vibe-bar-wrap">
+                <div class="vibe-bar amber" id="intent-bar" style="width:71%"></div>
+              </div>
+              <span class="vibe-val" id="intent-val">71%</span>
+            </div>
+          </div>
+          <div class="vibe-section">
+            <div class="section-label">ONE-CLICK FIXES</div>
+            <div class="fixes-queue" id="fixes-queue">
+              <div class="fix-item">
+                <span class="fix-icon">⚠️</span>
+                <span class="fix-desc">Missing null check in router.js:42</span>
+                <button class="fix-btn" onclick="applyFix(this)">Fix</button>
+              </div>
+              <div class="fix-item">
+                <span class="fix-icon">🐛</span>
+                <span class="fix-desc">Unused import in app.js:3</span>
+                <button class="fix-btn" onclick="applyFix(this)">Fix</button>
+              </div>
+              <div class="fix-item">
+                <span class="fix-icon">💡</span>
+                <span class="fix-desc">Refactor opportunity: extractFunction</span>
+                <button class="fix-btn" onclick="applyFix(this)">Fix</button>
+              </div>
+            </div>
+          </div>
+          <div class="vibe-section">
+            <div class="section-label">UNDO STACK</div>
+            <div class="undo-stack" id="undo-stack">
+              <div class="undo-item active">● Current State</div>
+              <div class="undo-item">○ Added null check (2m ago)</div>
+              <div class="undo-item">○ Refactored router loop (5m ago)</div>
+              <div class="undo-item">○ Initial commit (10m ago)</div>
+            </div>
+            <div class="undo-controls">
+              <button class="btn-secondary" onclick="undoAction()">↩ Undo</button>
+              <button class="btn-secondary" onclick="redoAction()">↪ Redo</button>
+            </div>
+          </div>
+          <div class="vibe-section">
+            <div class="section-label">MODE</div>
+            <div class="mode-toggle-row">
+              <button class="mode-btn active" id="vibe-rookie" onclick="setVibeMode('rookie')">🥊 Rookie</button>
+              <button class="mode-btn" id="vibe-expert" onclick="setVibeMode('expert')">🔥 Expert</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <aside class="right-panel hidden" id="panel-monetization">
+        <div class="panel-header">
+          <span>MONETIZATION 💰</span>
+          <button class="icon-btn" onclick="togglePanel('monetization')">✕</button>
+        </div>
+        <div class="monetization-panel">
+          <div class="mono-section">
+            <div class="section-label">REVENUE (TODAY)</div>
+            <div class="revenue-cards">
+              <div class="revenue-card">
+                <div class="revenue-platform">Gumroad</div>
+                <div class="revenue-amount">$142.50</div>
+                <div class="revenue-delta positive">+12%</div>
+              </div>
+              <div class="revenue-card">
+                <div class="revenue-platform">Stripe</div>
+                <div class="revenue-amount">$389.00</div>
+                <div class="revenue-delta positive">+8%</div>
+              </div>
+              <div class="revenue-card">
+                <div class="revenue-platform">NFT Sales</div>
+                <div class="revenue-amount">0.45 ETH</div>
+                <div class="revenue-delta neutral">—</div>
+              </div>
+            </div>
+          </div>
+          <div class="mono-section">
+            <div class="section-label">NFT DROP SCHEDULER</div>
+            <div class="nft-scheduler">
+              <input type="text" class="nft-input" placeholder="Collection name…" />
+              <input type="datetime-local" class="nft-input" />
+              <button class="btn-primary" onclick="scheduleNFTDrop()">Schedule Drop 🎨</button>
+            </div>
+            <div class="scheduled-drops" id="scheduled-drops">
+              <div class="drop-item">
+                <span class="drop-name">APEX Vol.1</span>
+                <span class="drop-date">Mar 1, 2026</span>
+                <span class="drop-status pending">Scheduled</span>
+              </div>
+            </div>
+          </div>
+          <div class="mono-section">
+            <div class="section-label">SESSION STATS</div>
+            <div class="session-stats">
+              <div class="stat-row"><span>Active Sessions</span><strong>247</strong></div>
+              <div class="stat-row"><span>Pro Tier Users</span><strong>18</strong></div>
+              <div class="stat-row"><span>Toward $500M Vision</span><strong>0.01%</strong></div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- BOTTOM PANEL (Terminal) -->
+    <div class="bottom-panel" id="bottom-panel">
+      <div class="bottom-panel-tabs">
+        <button class="bottom-tab active" onclick="switchBottomTab('terminal',this)">TERMINAL</button>
+        <button class="bottom-tab" onclick="switchBottomTab('output',this)">OUTPUT</button>
+        <button class="bottom-tab" onclick="switchBottomTab('problems',this)">PROBLEMS <span class="badge">3</span></button>
+        <button class="bottom-tab" onclick="switchBottomTab('router-log',this)">ROUTER LOG</button>
+        <div class="bottom-panel-actions">
+          <button class="icon-btn" onclick="addTerminalTab()" title="New Terminal">+</button>
+          <button class="icon-btn" onclick="splitTerminal()" title="Split Terminal">⊞</button>
+          <button class="icon-btn" onclick="toggleBottomPanel()" title="Close">✕</button>
+        </div>
+      </div>
+      <div class="bottom-content">
+        <!-- Terminal -->
+        <div class="bottom-pane active" id="pane-terminal">
+          <div class="terminal-tabs">
+            <div class="term-tab active" onclick="switchTerminal(0,this)">bash 1</div>
+            <div class="term-tab" onclick="switchTerminal(1,this)">bash 2</div>
+            <div class="term-tab" onclick="switchTerminal(2,this)">megacode</div>
+          </div>
+          <div class="terminal-body" id="terminal-body">
+            <div class="terminal-output" id="terminal-output"></div>
+            <div class="terminal-input-row">
+              <span class="terminal-prompt" id="terminal-prompt">apex@megacode:~$</span>
+              <input type="text" class="terminal-input" id="terminal-input"
+                     autocomplete="off" spellcheck="false"
+                     onkeydown="handleTerminalKey(event)" />
+            </div>
+          </div>
+        </div>
+        <!-- Output -->
+        <div class="bottom-pane" id="pane-output">
+          <div class="output-log" id="output-log">
+            <div class="log-line info">[INFO] APEX IDE initialized</div>
+            <div class="log-line info">[INFO] Monaco editor loaded</div>
+            <div class="log-line warn">[WARN] Ollama endpoint unreachable</div>
+            <div class="log-line info">[INFO] WebSocket bridge listening on :9742</div>
+          </div>
+        </div>
+        <!-- Problems -->
+        <div class="bottom-pane" id="pane-problems">
+          <div class="problems-list">
+            <div class="problem-item error">
+              <span class="problem-sev">●</span>
+              <span class="problem-file">src/router.js:42</span>
+              <span class="problem-msg">TypeError: Cannot read property of null</span>
+            </div>
+            <div class="problem-item warning">
+              <span class="problem-sev">●</span>
+              <span class="problem-file">src/app.js:3</span>
+              <span class="problem-msg">Unused import 'lodash'</span>
+            </div>
+            <div class="problem-item info">
+              <span class="problem-sev">●</span>
+              <span class="problem-file">src/app.js:120</span>
+              <span class="problem-msg">Consider extracting function</span>
+            </div>
+          </div>
+        </div>
+        <!-- Router Log -->
+        <div class="bottom-pane" id="pane-router-log">
+          <div class="output-log" id="router-log">
+            <div class="log-line info">[Router] Request → OpenAI GPT-4o (latency: 124ms)</div>
+            <div class="log-line info">[Router] Cache HIT for prompt hash #a3f2</div>
+            <div class="log-line warn">[Router] DeepSeek degraded — rerouting to Claude</div>
+            <div class="log-line info">[Router] Response scored: 88/100</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATUS BAR -->
+    <footer class="statusbar">
+      <div class="status-left">
+        <span class="status-item branch" onclick="gitBranch()">⎇ main</span>
+        <span class="status-item" id="status-errors">✕ 1  ⚠ 2</span>
+      </div>
+      <div class="status-center">
+        <span class="status-item" id="status-file">Welcome</span>
+      </div>
+      <div class="status-right">
+        <span class="status-item" id="status-cursor">Ln 1, Col 1</span>
+        <span class="status-item" id="status-encoding">UTF-8</span>
+        <span class="status-item" id="status-lang">JavaScript</span>
+        <span class="status-item megacode-badge">⬡ MEGACODE</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- COMMAND PALETTE -->
+  <div class="command-palette hidden" id="command-palette">
+    <div class="cp-overlay" onclick="closeCommandPalette()"></div>
+    <div class="cp-modal">
+      <input type="text" class="cp-input" id="cp-input"
+             placeholder="Type a command or search files…"
+             oninput="filterCommands(this.value)"
+             onkeydown="handleCPKey(event)" />
+      <div class="cp-results" id="cp-results"></div>
+    </div>
+  </div>
+
+  <script src="src/app.js"></script>
+</body>
+</html>
