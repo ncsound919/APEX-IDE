@@ -137,6 +137,7 @@
         <button class="activity-btn" data-panel="domains" onclick="switchActivity('domains',this)" title="Domain Adapters">🎛️</button>
         <button class="activity-btn" data-panel="cli" onclick="switchActivity('cli',this)" title="CLI Runner">💻</button>
         <button class="activity-btn" data-panel="mcp" onclick="switchActivity('mcp',this)" title="MCP Servers">🔌</button>
+        <button class="activity-btn" data-panel="logic-mode" onclick="switchActivity('logic-mode',this)" title="Logic Mode">🧩</button>
         <div class="activity-spacer"></div>
         <button class="activity-btn" data-panel="settings" onclick="switchActivity('settings',this)" title="Settings">⚙️</button>
       </aside>
@@ -471,6 +472,10 @@
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
         <!-- AI Chat Panel -->
         <div class="panel" id="panel-chat">
           <div class="panel-header">
@@ -607,6 +612,38 @@
             </div>
           </div>
         </div>
+
+        <!-- Logic Mode Panel -->
+        <div class="panel" id="panel-logic-mode">
+          <div class="panel-header">
+            <span>LOGIC MODE 🧩</span>
+            <div class="panel-actions">
+              <button class="icon-btn" onclick="importBuildPlan()" title="Import Build Plan">⬇</button>
+              <button class="icon-btn" onclick="clearLogicPlan()" title="Clear All Steps">🗑️</button>
+            </div>
+          </div>
+          <div class="logic-mode-panel">
+            <div class="logic-progress-row">
+              <div class="logic-progress-bar-wrap">
+                <div class="logic-progress-bar" id="logic-progress-bar"></div>
+              </div>
+              <span class="logic-step-count" id="logic-step-count">0/0 steps</span>
+            </div>
+            <div class="logic-step-list" id="logic-step-list">
+              <div class="logic-empty">No steps yet. Add a step or import a build plan.</div>
+            </div>
+            <div class="logic-add-form">
+              <div class="section-label">ADD STEP</div>
+              <div class="logic-add-row">
+                <input type="text" class="logic-step-input" id="logic-step-input"
+                       placeholder="Describe the next logic step…"
+                       onkeydown="if(event.key==='Enter')addLogicStep()" />
+                <button class="logic-add-btn" onclick="addLogicStep()" title="Add Step">+</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </aside>
 
       <!-- MAIN EDITOR AREA -->
@@ -721,6 +758,7 @@
                   <span class="shortcut"><kbd>Ctrl+G</kbd> Go to Line</span>
                   <span class="shortcut"><kbd>Shift+Alt+F</kbd> Format Doc</span>
                   <span class="shortcut"><kbd>Ctrl+D</kbd> Select Word</span>
+                  <span class="shortcut"><kbd>Ctrl+Shift+L</kbd> Logic Mode</span>
                 </div>
               </div>
             </div>
@@ -977,6 +1015,25 @@
              oninput="filterCommands(this.value)"
              onkeydown="handleCPKey(event)" />
       <div class="cp-results" id="cp-results"></div>
+    </div>
+  </div>
+
+  <!-- LOGIC MODE IMPORT MODAL -->
+  <div class="logic-import-modal hidden" id="logic-import-modal">
+    <div class="logic-import-overlay" onclick="closeImportModal()"></div>
+    <div class="logic-import-content">
+      <div class="logic-import-header">
+        <span>Import Build Plan 🧩</span>
+        <button class="icon-btn" onclick="closeImportModal()">✕</button>
+      </div>
+      <p class="logic-import-hint">Paste a numbered or bulleted build plan. Each step will become a Logic Mode item that can be worked through individually.</p>
+      <textarea class="logic-import-textarea" id="logic-import-text"
+                placeholder="1. Set up project structure&#10;2. Install dependencies&#10;3. Create the main component&#10;4. Add routing&#10;5. Write tests" rows="10"
+                onkeydown="if(event.key==='Escape')closeImportModal()"></textarea>
+      <div class="logic-import-footer">
+        <button class="btn-secondary" onclick="closeImportModal()">Cancel</button>
+        <button class="btn-primary" onclick="confirmImportBuildPlan()">Import Steps 🧩</button>
+      </div>
     </div>
   </div>
 
