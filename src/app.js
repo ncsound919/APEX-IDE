@@ -662,6 +662,8 @@ const CMD_HANDLERS = {
     if (exists) { termPrint('output', `touch: '${name}' already exists`); return; }
     const node = { name, type: 'file', depth: 0, lang: 'javascript' };
     SAMPLE_TREE.push(node);
+    const fileId = getFileId(name);
+    ApexState.fileBuffers[fileId] = '';
     renderFileTree();
     termPrint('output', `Created: ${name}`);
   },
