@@ -531,7 +531,7 @@
               <div class="section-label">APPEARANCE</div>
               <label class="settings-row">
                 <span>Theme</span>
-                <select onchange="changeTheme(this.value)">
+                <select id="settings-theme" onchange="changeTheme(this.value)">
                   <option value="hiphop-dark">Hip-Hop Dark</option>
                   <option value="hiphop-light">Hip-Hop Light</option>
                   <option value="midnight">Midnight</option>
@@ -539,7 +539,7 @@
               </label>
               <label class="settings-row">
                 <span>Font Size</span>
-                <input type="number" value="14" min="10" max="24" onchange="changeFontSize(this.value)" />
+                <input type="number" id="settings-font-size" value="14" min="10" max="24" onchange="changeFontSize(this.value)" />
               </label>
             </div>
             <div class="settings-section">
@@ -550,11 +550,11 @@
               </label>
               <label class="toggle-row">
                 <span>Word Wrap</span>
-                <input type="checkbox" class="toggle-switch" checked />
+                <input type="checkbox" class="toggle-switch" id="settings-word-wrap" onchange="toggleWordWrap(this.checked)" checked />
               </label>
               <label class="toggle-row">
                 <span>Minimap</span>
-                <input type="checkbox" class="toggle-switch" checked />
+                <input type="checkbox" class="toggle-switch" id="settings-minimap" onchange="setMinimap(this.checked)" checked />
               </label>
             </div>
             <div class="settings-section">
@@ -688,6 +688,15 @@
               <div class="settings-note">Folders uploaded to MCP servers and CLI instances.</div>
               <div id="settings-uploads-list" class="settings-uploads-list">
                 <div class="settings-note">No folders uploaded yet.</div>
+              </div>
+            </div>
+            <div class="settings-section">
+              <div class="section-label">DEEP CUSTOMIZATION</div>
+              <div class="settings-note">Fine-tune settings with JSON. Click Apply to instantly sync controls.</div>
+              <textarea id="settings-deep-json" class="settings-deep-json" spellcheck="false"></textarea>
+              <div class="settings-actions-row">
+                <button class="btn-secondary" onclick="applyDeepCustomization()">Apply JSON</button>
+                <button class="btn-secondary" onclick="loadDeepCustomizationJSON()">Reload Current</button>
               </div>
             </div>
             <div class="settings-section">
