@@ -23,6 +23,7 @@ const ApexState = {
   monacoEditor: null,
   minimapEnabled: true,
   _codeBlockCounter: 0,
+  fileBuffers: {},           // { 'file-id': 'content…' } — per-file content storage
   providers: {
     openai:    { name: 'OpenAI GPT-4o',      status: 'online',   latency: 124 },
     claude:    { name: 'Claude 3.5 Sonnet',  status: 'online',   latency: 89  },
@@ -102,6 +103,10 @@ const COMMANDS = [
   { icon: '💙', label: 'Inspired: VSCode Command Brain', shortcut: '',       fn: () => runInspiredFeature('vscode-command-brain') },
   { icon: '🌊', label: 'Inspired: Windsurf Flow Mode', shortcut: '',         fn: () => runInspiredFeature('windsurf-flow') },
   // Editor utilities
+  { icon: '🔎', label: 'Find in Editor',          shortcut: 'Ctrl+F',        fn: () => { if (ApexState.monacoEditor) ApexState.monacoEditor.trigger('keyboard', 'actions.find', null); } },
+  { icon: '🔄', label: 'Find and Replace',        shortcut: 'Ctrl+H',        fn: () => { if (ApexState.monacoEditor) ApexState.monacoEditor.trigger('keyboard', 'editor.action.startFindReplaceAction', null); } },
+  { icon: '↩️', label: 'Undo',                    shortcut: 'Ctrl+Z',        fn: () => undoAction() },
+  { icon: '↪️', label: 'Redo',                    shortcut: 'Ctrl+Shift+Z',  fn: () => redoAction() },
   { icon: '✏️', label: 'Format Document',          shortcut: 'Shift+Alt+F',   fn: () => formatDocument()      },
   { icon: '🔢', label: 'Go to Line',              shortcut: 'Ctrl+G',        fn: () => goToLine()            },
   { icon: '🗺️', label: 'Toggle Minimap',           shortcut: '',              fn: () => toggleMinimap()       },
@@ -212,6 +217,12 @@ function initApp() {
   renderMCPServers();
   renderCLIInstances();
   renderLogicPlan();
+
+  // Restore saved theme
+  try {
+    const savedTheme = localStorage.getItem('apex_theme');
+    if (savedTheme && THEMES[savedTheme]) changeTheme(savedTheme);
+  } catch (_) {}
 }
 
 /* ─── Load Monaco ─────────────────────────────────────────────────── */
@@ -394,11 +405,24 @@ function showPane(name) {
 function showMonacoPaneFor(node) {
   showPane('editor');
   if (ApexState.monacoEditor && typeof monaco !== 'undefined') {
-    const langMap = { js: 'javascript', ts: 'typescript', css: 'css', html: 'html', json: 'json', md: 'markdown', py: 'python', go: 'go' };
+    const langMap = { js: 'javascript', ts: 'typescript', css: 'css', html: 'html', json: 'json', md: 'markdown', py: 'python', go: 'go', rs: 'rust', sh: 'shell', txt: 'plaintext' };
     const ext = node.name.split('.').pop().toLowerCase();
     const lang = langMap[ext] || 'plaintext';
+    const fileId = 'file-' + node.name.replace(/[^a-z0-9]/gi, '-');
+
+    // Save current buffer before switching
+    const prevTab = ApexState.activeTab;
+    if (prevTab && prevTab !== 'welcome' && prevTab !== fileId) {
+      const currentContent = ApexState.monacoEditor.getValue();
+      ApexState.fileBuffers[prevTab] = currentContent;
+    }
+
+    // Restore saved content or use default
+    const savedContent = ApexState.fileBuffers[fileId];
+    const content = savedContent != null ? savedContent : `// ${node.name}\n`;
+
     const oldModel = ApexState.monacoEditor.getModel();
-    const model = monaco.editor.createModel(`// ${node.name}\n`, lang);
+    const model = monaco.editor.createModel(content, lang);
     ApexState.monacoEditor.setModel(model);
     if (oldModel && oldModel !== model) {
       oldModel.dispose();
@@ -491,7 +515,7 @@ function initTerminal() {
   termPrint('output', '| |_| |  __/| |___|__   _|| || |_| | |___ ');
   termPrint('output', ' \\___/|_|   |_____|  |_||___|____/|_____|');
   termPrint('output', '');
-  termPrint('output', 'APEX IDE — Megacode Edition  v1.0.0');
+  termPrint('output', 'APEX IDE — Megacode Edition  v2.0.0');
   termPrint('output', 'Type "help" for available commands.\n');
 }
 
@@ -540,11 +564,23 @@ const CMD_HANDLERS = {
     termPrint('output', 'Available commands:');
     termPrint('output', '  help          — Show this help');
     termPrint('output', '  ls            — List files');
+    termPrint('output', '  cat <file>    — Display file contents');
+    termPrint('output', '  touch <file>  — Create a new file');
+    termPrint('output', '  mkdir <dir>   — Create a new directory');
+    termPrint('output', '  rm <file>     — Remove a file or directory');
     termPrint('output', '  git status    — Show git status');
     termPrint('output', '  git pull/push — Git operations');
     termPrint('output', '  npm run start — Start dev server');
     termPrint('output', '  megacode      — Start Megacode session');
     termPrint('output', '  ollama        — Interact with Ollama');
+    termPrint('output', '  history       — Show command history');
+    termPrint('output', '  date          — Show current date/time');
+    termPrint('output', '  uptime        — Show session uptime');
+    termPrint('output', '  env           — Show environment variables');
+    termPrint('output', '  whoami        — Show current user');
+    termPrint('output', '  echo <text>   — Echo text');
+    termPrint('output', '  theme <name>  — Switch color theme');
+    termPrint('output', '  version       — Show IDE version');
     termPrint('output', '  clear         — Clear terminal');
   },
   clear: () => { document.getElementById('terminal-output').innerHTML = ''; },
@@ -571,6 +607,62 @@ const CMD_HANDLERS = {
   pwd: () => termPrint('output', '/home/apex/projects'),
   echo: (args) => termPrint('output', args.join(' ')),
   whoami: () => termPrint('output', ApexState.userHandle),
+  date: () => termPrint('output', new Date().toString()),
+  uptime: () => {
+    const mins = Math.floor((Date.now() - (ApexState.session?.startTime || Date.now())) / 60000);
+    termPrint('output', `Session uptime: ${mins < 60 ? mins + 'm' : Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm'}`);
+  },
+  history: () => {
+    if (ApexState.terminalHistory.length === 0) { termPrint('output', '(no history)'); return; }
+    ApexState.terminalHistory.slice().reverse().forEach((cmd, i) => termPrint('output', `  ${i + 1}  ${cmd}`));
+  },
+  cat: (args) => {
+    if (!args.length) { termPrint('warn', 'Usage: cat <filename>'); return; }
+    const name = args[0];
+    const fileId = 'file-' + name.replace(/[^a-z0-9]/gi, '-');
+    const content = ApexState.fileBuffers[fileId];
+    if (content != null) { termPrint('output', content); }
+    else { termPrint('error', `cat: ${name}: No such file`); }
+  },
+  touch: (args) => {
+    if (!args.length) { termPrint('warn', 'Usage: touch <filename>'); return; }
+    const name = args[0];
+    const exists = SAMPLE_TREE.some(n => n.name === name);
+    if (exists) { termPrint('output', `touch: '${name}' already exists`); return; }
+    const node = { name, type: 'file', depth: 0, lang: 'javascript' };
+    SAMPLE_TREE.push(node);
+    renderFileTree();
+    termPrint('output', `Created: ${name}`);
+  },
+  mkdir: (args) => {
+    if (!args.length) { termPrint('warn', 'Usage: mkdir <dirname>'); return; }
+    const name = args[0];
+    SAMPLE_TREE.push({ name, type: 'folder', depth: 0, open: true, children: [] });
+    renderFileTree();
+    termPrint('output', `Created directory: ${name}`);
+  },
+  rm: (args) => {
+    if (!args.length) { termPrint('warn', 'Usage: rm <filename>'); return; }
+    const name = args[0];
+    const idx = SAMPLE_TREE.findIndex(n => n.name === name);
+    if (idx === -1) { termPrint('error', `rm: ${name}: No such file or directory`); return; }
+    SAMPLE_TREE.splice(idx, 1);
+    renderFileTree();
+    termPrint('output', `Removed: ${name}`);
+  },
+  env: () => {
+    termPrint('output', `USER=${ApexState.userHandle}`);
+    termPrint('output', `MODE=${ApexState.mode}`);
+    termPrint('output', `PROJECT=${ApexState.projectName || '(none)'}`);
+    termPrint('output', `PROJECT_TYPE=${ApexState.projectType}`);
+    termPrint('output', `EDITOR=monaco`);
+    termPrint('output', `TERM=apex-terminal`);
+  },
+  version: () => termPrint('output', 'APEX IDE v2.0.0 — Megacode Edition'),
+  theme: (args) => {
+    if (!args.length) { termPrint('output', 'Available themes: ' + Object.keys(THEMES).join(', ')); return; }
+    changeTheme(args[0]);
+  },
 };
 
 function processCommand(raw) {
@@ -612,8 +704,16 @@ function applyFix(btn) {
   termPrint('output', '[Vibe] Fix applied ✓');
 }
 
-function undoAction() { termPrint('output', '[Editor] Undo'); }
-function redoAction() { termPrint('output', '[Editor] Redo'); }
+function undoAction() {
+  if (ApexState.monacoEditor) {
+    ApexState.monacoEditor.trigger('keyboard', 'undo', null);
+  }
+}
+function redoAction() {
+  if (ApexState.monacoEditor) {
+    ApexState.monacoEditor.trigger('keyboard', 'redo', null);
+  }
+}
 
 function setVibeMode(mode) {
   ApexState.mode = mode;
@@ -764,26 +864,90 @@ function newFolder() {
 }
 
 function refreshExplorer() { renderFileTree(); termPrint('output', '[Explorer] Refreshed'); }
-function saveFile() { termPrint('output', '[Editor] File saved'); }
+
+function saveFile() {
+  if (!ApexState.monacoEditor || ApexState.activeTab === 'welcome') {
+    showToast('No file to save', 'warn');
+    return;
+  }
+  const content = ApexState.monacoEditor.getValue();
+  ApexState.fileBuffers[ApexState.activeTab] = content;
+  // Persist all buffers to localStorage
+  try {
+    localStorage.setItem('apex_file_buffers', JSON.stringify(ApexState.fileBuffers));
+  } catch (_) { /* storage full or unavailable */ }
+  const fileName = ApexState.activeTab.replace('file-', '').replace(/-/g, '.');
+  showToast(`Saved: ${fileName}`, 'success');
+}
 
 /* ─── Search ──────────────────────────────────────────────────────── */
 function runSearch(query) {
   const results = document.getElementById('search-results');
   if (!query) { results.innerHTML = '<p class="empty-state">Type to search…</p>'; return; }
-  // Simulate search results
-  const files = ['src/app.js', 'src/router.js', 'src/styles.css', 'package.json'];
-  const matches = files.filter(() => Math.random() > 0.4);
+
+  const useRegex = document.getElementById('search-regex')?.checked;
+  const matchCase = document.getElementById('search-case')?.checked;
+  const q = matchCase ? query : query.toLowerCase();
+  let re = null;
+  if (useRegex) {
+    try { re = new RegExp(query, matchCase ? 'g' : 'gi'); } catch (_) { results.innerHTML = '<p class="empty-state">Invalid regex</p>'; return; }
+  }
+
+  // Collect all file nodes from the tree
+  function collectFiles(nodes, prefix) {
+    let out = [];
+    (nodes || []).forEach(n => {
+      const path = prefix ? prefix + '/' + n.name : n.name;
+      if (n.type === 'folder' && n.children) {
+        out = out.concat(collectFiles(n.children, path));
+      } else if (n.type === 'file') {
+        out.push({ path, node: n });
+      }
+    });
+    return out;
+  }
+  const allFiles = collectFiles(SAMPLE_TREE, '');
+
+  // Search in file names and file content buffers
+  const matches = [];
+  allFiles.forEach(({ path, node }) => {
+    const nameToCheck = matchCase ? path : path.toLowerCase();
+    const nameMatch = re ? re.test(path) : nameToCheck.includes(q);
+    // Also search stored buffer content
+    const fileId = 'file-' + node.name.replace(/[^a-z0-9]/gi, '-');
+    const content = ApexState.fileBuffers?.[fileId] || '';
+    const contentToCheck = matchCase ? content : content.toLowerCase();
+    const contentMatch = content && (re ? re.test(content) : contentToCheck.includes(q));
+    if (nameMatch || contentMatch) {
+      matches.push({ path, node, contentMatch });
+    }
+  });
+
   if (matches.length === 0) { results.innerHTML = '<p class="empty-state">No results found</p>'; return; }
-  results.innerHTML = matches.map(f => `
-    <div class="file-item" onclick="termPrint('output','[Search] Opening ${f}')">
-      <span>${getFileIcon(f)}</span>
-      <span>${f}</span>
-    </div>
-  `).join('');
+  results.innerHTML = matches.map(m => {
+    const icon = getFileIcon(m.path);
+    const badge = m.contentMatch ? '<span class="search-content-badge">content</span>' : '';
+    return `<div class="file-item" onclick="openFileTab(${JSON.stringify(m.node).replace(/"/g, '&quot;')})">
+      <span>${icon}</span>
+      <span>${m.path}</span>
+      ${badge}
+    </div>`;
+  }).join('');
 }
 
 /* ─── Settings ────────────────────────────────────────────────────── */
-function changeTheme(theme) { termPrint('output', `[Settings] Theme: ${theme}`); }
+function changeTheme(theme) {
+  const t = THEMES[theme];
+  if (!t) { showToast(`Unknown theme: ${theme}`, 'warn'); return; }
+  Object.entries(t).forEach(([key, val]) => {
+    if (key.startsWith('--')) document.documentElement.style.setProperty(key, val);
+  });
+  if (t.monacoTheme && ApexState.monacoEditor && typeof monaco !== 'undefined') {
+    monaco.editor.setTheme(t.monacoTheme);
+  }
+  try { localStorage.setItem('apex_theme', theme); } catch (_) {}
+  showToast(`Theme: ${theme}`, 'success');
+}
 function changeFontSize(size) {
   const sizeNum = parseInt(size) || 14;
   const input = document.getElementById('settings-font-size');
@@ -2648,6 +2812,8 @@ function explainError() {
     localStorage.removeItem('apex_state');
     localStorage.removeItem('apex_onboarded');
     localStorage.removeItem('apex_chat_history');
+    localStorage.removeItem('apex_file_buffers');
+    localStorage.removeItem('apex_theme');
     location.reload();
   };
 
@@ -2659,6 +2825,65 @@ function explainError() {
     return result;
   };
 }());
+
+/* ─── Toast Notification System ────────────────────────────────────── */
+function showToast(message, type = 'info') {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  const icons = { success: '✓', warn: '⚠', error: '✕', info: 'ℹ' };
+  toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-msg">${message}</span>`;
+  container.appendChild(toast);
+  // Trigger enter animation
+  requestAnimationFrame(() => toast.classList.add('toast-visible'));
+  setTimeout(() => {
+    toast.classList.remove('toast-visible');
+    toast.classList.add('toast-exit');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+/* ─── Theme Switching ─────────────────────────────────────────────── */
+const THEMES = {
+  'hiphop-dark': {
+    '--bg-primary': '#0d0d0f', '--bg-secondary': '#141418', '--bg-tertiary': '#1c1c22',
+    '--bg-hover': '#22222a', '--bg-active': '#2a2a36', '--accent-gold': '#f5c518',
+    '--accent-pink': '#ff2d78', '--accent-cyan': '#00e5ff', '--accent-purple': '#9b59ff',
+    '--text-primary': '#f0f0f5', '--text-secondary': '#9999aa', '--text-muted': '#555566',
+    '--border': '#2a2a36', '--border-bright': '#44445a',
+    monacoTheme: 'apex-dark',
+  },
+  'midnight-blue': {
+    '--bg-primary': '#0a0e1a', '--bg-secondary': '#111827', '--bg-tertiary': '#1e293b',
+    '--bg-hover': '#253049', '--bg-active': '#334155', '--accent-gold': '#60a5fa',
+    '--accent-pink': '#f472b6', '--accent-cyan': '#22d3ee', '--accent-purple': '#a78bfa',
+    '--text-primary': '#f1f5f9', '--text-secondary': '#94a3b8', '--text-muted': '#475569',
+    '--border': '#1e293b', '--border-bright': '#334155',
+    monacoTheme: 'vs-dark',
+  },
+  'solarized-dark': {
+    '--bg-primary': '#002b36', '--bg-secondary': '#073642', '--bg-tertiary': '#0a4050',
+    '--bg-hover': '#0d4f60', '--bg-active': '#115e70', '--accent-gold': '#b58900',
+    '--accent-pink': '#d33682', '--accent-cyan': '#2aa198', '--accent-purple': '#6c71c4',
+    '--text-primary': '#fdf6e3', '--text-secondary': '#93a1a1', '--text-muted': '#586e75',
+    '--border': '#073642', '--border-bright': '#586e75',
+    monacoTheme: 'vs-dark',
+  },
+  'light': {
+    '--bg-primary': '#ffffff', '--bg-secondary': '#f5f5f5', '--bg-tertiary': '#e8e8e8',
+    '--bg-hover': '#dcdcdc', '--bg-active': '#d0d0d0', '--accent-gold': '#d97706',
+    '--accent-pink': '#db2777', '--accent-cyan': '#0891b2', '--accent-purple': '#7c3aed',
+    '--text-primary': '#1a1a1a', '--text-secondary': '#555555', '--text-muted': '#999999',
+    '--border': '#e0e0e0', '--border-bright': '#cccccc',
+    monacoTheme: 'vs',
+  },
+};
 
 /* ─── Global Hotkeys ──────────────────────────────────────────────── */
 document.addEventListener('keydown', e => {
@@ -2678,6 +2903,11 @@ document.addEventListener('keydown', e => {
   if (ctrl && e.key === 'm' && !e.shiftKey) { e.preventDefault(); switchActivity('music-player'); return; }
   if (ctrl && e.key === 's') { e.preventDefault(); saveFile(); return; }
   if (ctrl && e.key === 'g') { e.preventDefault(); goToLine(); return; }
+  if (ctrl && e.key === 'f' && !e.shiftKey) { e.preventDefault(); if (ApexState.monacoEditor) ApexState.monacoEditor.trigger('keyboard', 'actions.find', null); return; }
+  if (ctrl && e.key === 'h') { e.preventDefault(); if (ApexState.monacoEditor) ApexState.monacoEditor.trigger('keyboard', 'editor.action.startFindReplaceAction', null); return; }
+  if (ctrl && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undoAction(); return; }
+  if (ctrl && e.key === 'z' && e.shiftKey) { e.preventDefault(); redoAction(); return; }
+  if (ctrl && e.key === 'y') { e.preventDefault(); redoAction(); return; }
   if (e.altKey && e.shiftKey && e.key === 'F') { e.preventDefault(); formatDocument(); return; }
   // AI action shortcuts (only when not typing in an input/textarea)
   const tag = document.activeElement?.tagName;
@@ -2692,6 +2922,12 @@ document.addEventListener('keydown', e => {
 
 /* ─── Boot ────────────────────────────────────────────────────────── */
 window.addEventListener('DOMContentLoaded', () => {
+  // Restore file buffers from localStorage
+  try {
+    const savedBuffers = localStorage.getItem('apex_file_buffers');
+    if (savedBuffers) ApexState.fileBuffers = JSON.parse(savedBuffers) || {};
+  } catch (_) {}
+
   // Check if already onboarded
   const saved = localStorage.getItem('apex_state');
   if (localStorage.getItem('apex_onboarded') && saved) {
@@ -2747,3 +2983,60 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   // Otherwise show onboarding (default)
 });
+
+/* ─── Drag & Drop File Import ─────────────────────────────────────── */
+(function () {
+  let _dragOverlay = null;
+  let _dragCount = 0;
+
+  document.addEventListener('dragenter', e => {
+    e.preventDefault();
+    _dragCount++;
+    if (_dragCount === 1 && !_dragOverlay) {
+      _dragOverlay = document.createElement('div');
+      _dragOverlay.className = 'drag-overlay';
+      _dragOverlay.innerHTML = '<div class="drag-overlay-text">DROP FILES TO IMPORT</div>';
+      document.body.appendChild(_dragOverlay);
+    }
+  });
+
+  document.addEventListener('dragleave', e => {
+    e.preventDefault();
+    _dragCount--;
+    if (_dragCount <= 0) {
+      _dragCount = 0;
+      if (_dragOverlay) { _dragOverlay.remove(); _dragOverlay = null; }
+    }
+  });
+
+  document.addEventListener('dragover', e => e.preventDefault());
+
+  document.addEventListener('drop', e => {
+    e.preventDefault();
+    _dragCount = 0;
+    if (_dragOverlay) { _dragOverlay.remove(); _dragOverlay = null; }
+
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+
+    let importedCount = 0;
+    Array.from(files).forEach(file => {
+      // Skip binary/large files
+      if (file.size > 5 * 1024 * 1024) { showToast(`Skipped ${file.name} (too large)`, 'warn'); return; }
+      const exists = SAMPLE_TREE.some(n => n.name === file.name);
+      if (exists) { showToast(`${file.name} already exists`, 'warn'); return; }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const node = { name: file.name, type: 'file', depth: 0, lang: 'javascript' };
+        SAMPLE_TREE.push(node);
+        const fileId = 'file-' + file.name.replace(/[^a-z0-9]/gi, '-');
+        ApexState.fileBuffers[fileId] = reader.result;
+        renderFileTree();
+        importedCount++;
+        showToast(`Imported: ${file.name}`, 'success');
+      };
+      reader.readAsText(file);
+    });
+  });
+}());
