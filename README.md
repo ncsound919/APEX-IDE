@@ -52,12 +52,61 @@ Built from the [`Desktop IDE`](Desktop%20IDE) JSON specification:
 # Install dependencies
 npm install
 
-# Launch dev server
+# Launch dev server (frontend only — simulation mode)
 npm start
 # → http://localhost:3000
 ```
 
 Or just open `index.html` directly in a modern browser.
+
+## Backend Server (Real Industry Power)
+
+The optional backend server unlocks real execution — no more simulation:
+
+| Feature | Without Backend | With Backend |
+|---------|----------------|--------------|
+| **Terminal** | Simulated commands | Real shell (bash/sh) via WebSocket |
+| **File System** | Static demo tree | Real read/write/create/delete |
+| **Git** | Fake output | Real git status/commit/pull/push/branch/log |
+| **CLI Runner** | Simulated npm/vite | Real command execution |
+| **Save File** | Log message only | Actually writes to disk |
+| **LLM Proxy** | Direct browser fetch (CORS issues) | Proxied through backend (CORS-free) |
+| **Code Lint** | None | Server-side syntax checking |
+
+```bash
+# Start backend (in a separate terminal)
+npm run backend
+# → APEX Backend running on http://127.0.0.1:3001
+
+# Start frontend in another terminal
+npm start
+# → http://localhost:3000
+```
+
+The IDE auto-detects the backend on startup. The topbar badge shows **⬡ LIVE** when connected or **⬡ SIM** in simulation mode.
+
+### Backend API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/health` | Server health & info |
+| `GET` | `/api/files` | List directory tree |
+| `GET` | `/api/files/read` | Read file content |
+| `POST` | `/api/files/write` | Write file content |
+| `POST` | `/api/files/create` | Create file or folder |
+| `DELETE` | `/api/files` | Delete file or folder |
+| `POST` | `/api/files/rename` | Rename/move file |
+| `GET` | `/api/git/status` | Git working tree status |
+| `GET` | `/api/git/log` | Recent commit history |
+| `GET` | `/api/git/diff` | Diff of working tree |
+| `POST` | `/api/git/commit` | Stage all and commit |
+| `POST` | `/api/git/pull` | Pull from remote |
+| `POST` | `/api/git/push` | Push to remote |
+| `POST` | `/api/git/branch` | Create new branch |
+| `POST` | `/api/exec` | Execute shell command |
+| `POST` | `/api/llm/proxy` | Proxy LLM API calls |
+| `POST` | `/api/lint` | Lint code server-side |
+| `WS` | `/ws/terminal` | Real interactive terminal |
 
 ## Keyboard Shortcuts
 
@@ -79,8 +128,11 @@ APEX-IDE/
 ├── index.html          # Main entry point (all components)
 ├── src/
 │   ├── styles.css      # Hip-hop theme (CSS variables + components)
-│   └── app.js          # Application logic, state, terminal, Monaco init
-├── package.json        # npm config + dev server
+│   └── app.js          # Application logic + ApexBackend client
+├── backend/
+│   ├── server.js       # Node.js backend (Express + WebSocket)
+│   └── package.json    # Backend dependencies (express, cors, ws)
+├── package.json        # npm config + frontend & backend scripts
 └── Desktop IDE         # Original JSON specification
 ```
 

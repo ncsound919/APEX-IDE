@@ -177,6 +177,19 @@ a { color: var(--accent-cyan); text-decoration: none; }
   border: 1px solid var(--accent-purple);
   font-size: 11px; font-weight: 600; letter-spacing: 1px;
 }
+.backend-badge {
+  padding: 3px 8px; border-radius: 20px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  font-size: 10px; font-weight: 700; letter-spacing: 1px;
+  color: var(--text-muted); cursor: default;
+  transition: background 0.3s, color 0.3s, border-color 0.3s;
+}
+.backend-badge.backend-live {
+  background: linear-gradient(135deg, #0a2a1a, #0a1a2a);
+  border-color: #39ff14;
+  color: #39ff14;
+}
 .mode-indicator {
   padding: 3px 10px; border-radius: 20px;
   background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
@@ -1235,4 +1248,45 @@ body.zen-mode .workspace {
 }
 body.zen-mode .editor-area {
   flex: 1;
+}
+
+/* ── Backend Panel ── */
+.backend-panel { padding: 8px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.backend-status-section { display: flex; flex-direction: column; gap: 6px; }
+.backend-status-card {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: var(--radius);
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  transition: border-color 0.3s;
+}
+.backend-status-card.connected { border-color: #39ff14; background: rgba(57,255,20,.07); }
+.backend-status-icon {
+  font-size: 20px; width: 28px; text-align: center;
+  color: var(--text-muted);
+}
+.backend-status-card.connected .backend-status-icon { color: #39ff14; }
+.backend-status-info { flex: 1; }
+.backend-status-title { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+.backend-status-sub { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+.backend-reconnect-btn {
+  padding: 4px 10px; border-radius: var(--radius-sm);
+  background: var(--bg-hover); border: 1px solid var(--border);
+  color: var(--text-secondary); font-size: 11px; cursor: pointer;
+}
+.backend-reconnect-btn:hover { background: var(--accent-gold); color: #000; }
+.backend-cap-list { display: flex; flex-direction: column; gap: 4px; }
+.backend-cap-row {
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+  background: var(--bg-tertiary); border-radius: var(--radius-sm);
+  font-size: 11px; color: var(--text-secondary);
+}
+.backend-cap-icon { font-size: 14px; }
+.backend-howto {
+  padding: 10px 12px; background: var(--bg-tertiary);
+  border-radius: var(--radius); font-size: 11px; color: var(--text-secondary);
+  line-height: 1.8;
+}
+.backend-howto code {
+  background: var(--bg-primary); color: var(--accent-cyan);
+  padding: 1px 5px; border-radius: 3px; font-family: var(--font-code);
 }
