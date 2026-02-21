@@ -1043,6 +1043,8 @@ function sendChatMessage(overrideContent) {
       loadingEl.remove();
       const errMsg = `Error: ${err.message || 'Could not reach AI provider. Check your API keys in Settings.'}`;
       renderChatBubble('assistant', errMsg);
+      ApexState.chatHistory.push({ role: 'assistant', content: errMsg });
+      saveChatHistory();
     })
     .finally(() => {
       ApexState.chatLoading = false;
