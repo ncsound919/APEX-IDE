@@ -2173,8 +2173,22 @@ function explainError() {
   const _monacoInterval = setInterval(() => {
     if (ApexState.monacoEditor) {
       clearInterval(_monacoInterval);
-      ApexState.monacoEditor.onDidChangeModelContent(() => {
-        ApexState.session.linesWritten++;
+      ApexState.monacoEditor.onDidChangeModelContent((e) => {
+        let deltaLines = 0;
+        if (e && Array.isArray(e.changes)) {
+          e.changes.forEach((change) => {
+            const linesAdded = change.text ? change.text.split('\n').length - 1 : 0;
+            const linesRemoved = change.range
+              ? change.range.endLineNumber - change.range.startLineNumber
+              : 0;
+            deltaLines += linesAdded - linesRemoved;
+          });
+        }
+        if (deltaLines < 0) {
+          // Only track lines written; ignore pure deletions in this metric.
+          deltaLines = 0;
+        }
+        ApexState.session.linesWritten += deltaLines;
         scheduleAutoSave();
       });
     }
