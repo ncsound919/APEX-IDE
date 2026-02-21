@@ -1,0 +1,228 @@
+{
+  "ide_improvements": {
+    "priority": "high",
+    "description": "Core backend scaffolding to match and exceed VS Code/JetBrains baseline capabilities [web:12][web:10]",
+    "features": [
+      {
+        "name": "Workspace Management",
+        "priority": "critical",
+        "status": "implement",
+        "spec": {
+          "endpoints": ["/workspaces", "/workspaces/:id", "/workspaces/:id/start", "/workspaces/:id/stop"],
+          "data_model": {
+            "Workspace": {
+              "id": "string",
+              "user_id": "string",
+              "repo_url": "string",
+              "branch": "string",
+              "compute_profile": {"cpu": "number", "ram_gb": "number", "gpu": "boolean"},
+              "container_config": {"image": "string", "ports": ["string"], "env": {"key": "string"}},
+              "status": "enum(pending, running, stopped, error)"
+            }
+          },
+          "capabilities": [
+            "spin_up_remote_env",
+            "hot_reload_codebase",
+            "persistent_state_across_restarts"
+          ],
+          "integrations": ["git_clone", "docker_compose", "ssh_tunnel"],
+          "metrics": ["spin_up_time_ms", "health_check_interval_s"]
+        },
+        "implementation": {
+          "backend_services": ["workspace-orchestrator", "container-manager"],
+          "db_schema": ["workspaces", "workspace_events"],
+          "dependencies": ["docker-py", "paramiko"]
+        }
+      },
+      {
+        "name": "Project Indexing & Search",
+        "priority": "critical",
+        "status": "implement",
+        "spec": {
+          "endpoints": ["/index/:workspace_id/start", "/search/:workspace_id", "/symbols/:workspace_id"],
+          "index_types": ["symbols", "full_text", "test_locations", "data_flows"],
+          "query_formats": ["regex", "semantic_embedding", "symbol_reference"],
+          "update_triggers": ["file_save", "git_pull", "manual_reindex"],
+          "storage": "sqlite | elasticsearch | pg_trgm"
+        },
+        "implementation": {
+          "parsers": ["tree-sitter for JS/TS/Python", "ripgrep for text"],
+          "background_jobs": ["incremental_indexer"],
+          "ai_enhancements": ["embeddings_for_semantic_search"]
+        }
+      }
+    ]
+  },
+  "ai_native_layer": {
+    "priority": "high",
+    "description": "AI as first-class runtime, beyond sidebar chat [web:15]",
+    "features": [
+      {
+        "name": "AI Task Orchestrator",
+        "priority": "critical",
+        "status": "enhance_existing_llm_proxy",
+        "spec": {
+          "endpoints": ["/ai/tasks/:workspace_id", "/ai/tasks/:task_id/execute", "/ai/tasks/:task_id/stream"],
+          "task_types": [
+            "generate_code",
+            "refactor_module",
+            "write_tests",
+            "generate_docs",
+            "debug_analysis",
+            "security_scan",
+            "experiment_setup"
+          ],
+          "context_providers": ["project_graph", "file_contents", "test_results", "git_history"],
+          "tools": [
+            {"name": "edit_file", "params": {"path": "string", "content": "string"}},
+            {"name": "run_test", "params": {"test_name": "string"}},
+            {"name": "search_symbols", "params": {"query": "string"}}
+          ],
+          "model_router": {
+            "rules": [
+              {"task": "code_gen", "models": ["deepseek-coder", "codestral"], "priority": "speed"},
+              {"task": "reasoning", "models": ["claude-3.5-sonnet"], "priority": "accuracy"}
+            ]
+          }
+        },
+        "implementation": {
+          "framework": "langchain | haystack | custom_agent_loop",
+          "memory": ["conversation_history", "project_knowledge", "user_preferences"],
+          "safety": ["sandboxed_execution", "human_review_for_destructive_actions"]
+        }
+      },
+      {
+        "name": "Project Knowledge Graph",
+        "priority": "high",
+        "status": "new",
+        "spec": {
+          "nodes": ["functions", "classes", "modules", "tests", "endpoints", "experiments"],
+          "edges": ["calls", "imports", "tests", "depends_on", "data_flow"],
+          "query_language": "cypher | gremlin | sql",
+          "auto_population": ["from_lsp", "from_git_commits", "from_test_runs"],
+          "ai_queries": [
+            "find_data_flows_to_endpoint_X",
+            "locate_dead_code",
+            "suggest_refactor_boundaries"
+          ]
+        },
+        "implementation": {
+          "storage": "neo4j | age | custom_sql_schema",
+          "indexers": ["lsp_symbol_extractor", "test_result_parser"]
+        }
+      }
+    ]
+  },
+  "collaboration_engine": {
+    "priority": "medium",
+    "description": "Real-time multi-user, beyond Git [web:2]",
+    "features": [
+      {
+        "name": "Live Session Sync",
+        "priority": "high",
+        "status": "implement",
+        "spec": {
+          "sync_granularity": ["file_contents", "cursor_position", "terminal_output", "debug_state"],
+          "conflict_resolution": "operational_transform | crdt",
+          "presence": {"user_id": "string", "cursor": {"line": "number", "col": "number"}, "activity": "enum(editing, debugging, idle)"},
+          "permissions": ["view", "edit", "debug", "admin"],
+          "endpoints": ["/sessions/:workspace_id/join", "/sessions/:workspace_id/events"]
+        },
+        "implementation": {
+          "protocol": "websocket | quic",
+          "libraries": ["yjs | ot.js", "liveblocks"]
+        }
+      }
+    ]
+  },
+  "vertical_workflows": {
+    "priority": "medium",
+    "description": "Domain-specific superpowers for music/biotech/logistics",
+    "features": [
+      {
+        "name": "Audio DSP Workspace",
+        "priority": "high",
+        "status": "new",
+        "spec": {
+          "prebuilt_environment": {
+            "images": ["ffmpeg:6", "python:3.12-audio", "juce:7-dev"],
+            "tools": ["sox", "aubio", "librosa", "torch-audio"],
+            "sample_projects": ["mpc-style-drum-machine", "vst-plugin-template"]
+          },
+          "specialized_endpoints": [
+            "/dsp/render_audio",
+            "/dsp/analyze_spectrum",
+            "/dsp/export_stems"
+          ],
+          "ai_tasks": [
+            "generate_drum_pattern",
+            "mixdown_suggestions",
+            "mastering_preview"
+          ]
+        },
+        "implementation": {
+          "sandbox_extensions": ["audio_volume_limits", "low_latency_mode"],
+          "integrations": ["pubchem_audio??"]
+        }
+      },
+      {
+        "name": "Biotech Experiment Runner",
+        "priority": "medium",
+        "status": "new",
+        "spec": {
+          "experiment_model": {
+            "config": "json/yaml",
+            "inputs": ["pubchem_cid", "protein_sequence"],
+            "outputs": ["molecular_docking_scores", "histograms", "3d_structures"]
+          },
+          "endpoints": ["/experiments/:id/run", "/experiments/:id/compare"],
+          "integrations": ["pubchem_api", "rdkit", "alphafold_local"]
+        }
+      }
+    ]
+  },
+  "observability_platform": {
+    "priority": "medium",
+    "description": "Make ops invisible but bulletproof",
+    "features": [
+      {
+        "name": "Workspace Telemetry",
+        "priority": "high",
+        "status": "implement",
+        "spec": {
+          "metrics": [
+            "workspace_spin_time_ms",
+            "file_save_latency_ms",
+            "test_run_duration_s",
+            "ai_task_success_rate_pct",
+            "memory_usage_gb"
+          ],
+          "traces": ["file_ops", "run_commands", "ai_executions"],
+          "alerts": ["workspace_down_5min", "test_flake_rate_>10%"],
+          "endpoints": ["/metrics/:workspace_id", "/traces/:workspace_id"]
+        },
+        "implementation": {
+          "stack": "prometheus + grafana | otel",
+          "dashboards": ["workspace_health", "perf_trends"]
+        }
+      }
+    ]
+  },
+  "deployment_modes": {
+    "priority": "low",
+    "description": "Self-hostable + cloud-native",
+    "features": [
+      {
+        "name": "Single Binary Mode",
+        "priority": "high",
+        "status": "enhance",
+        "spec": {
+          "commands": ["dev", "serve", "worker"],
+          "configs": ["local-only", "single-tenant", "multi-tenant"],
+          "storage": "sqlite | postgres",
+          "ports": ["api:8080", "ws:8081"]
+        }
+      }
+    ]
+  }
+}
