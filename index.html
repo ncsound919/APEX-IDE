@@ -363,6 +363,23 @@
           <div class="panel-header"><span>CLI RUNNER</span></div>
           <div class="cli-panel">
             <div class="cli-section">
+              <div class="section-label">CLI INSTANCES</div>
+              <div class="cli-instance-list" id="cli-instance-list"></div>
+              <div class="mcp-add-form" style="margin-top:8px">
+                <input type="text" class="mcp-input" id="cli-instance-name" placeholder="CLI instance name…" />
+                <div class="mcp-folder-row">
+                  <span class="mcp-folder-label-text">📁 Folder</span>
+                  <label class="mcp-folder-pick-btn" for="cli-instance-folder">
+                    Browse
+                  </label>
+                  <input type="file" id="cli-instance-folder" style="display:none" webkitdirectory multiple
+                         onchange="document.getElementById('cli-instance-folder-name').textContent=this.files.length?this.files[0].webkitRelativePath.split('/')[0]:'No folder selected'" />
+                  <span class="mcp-folder-name" id="cli-instance-folder-name">No folder selected</span>
+                </div>
+                <button class="btn-primary mcp-add-btn" onclick="addCLIInstance()">+ Add CLI</button>
+              </div>
+            </div>
+            <div class="cli-section">
               <div class="section-label">FRONTEND QUICK COMMANDS</div>
               <button class="cli-quick-btn" onclick="runCLICommand('npm install')">📦 npm install</button>
               <button class="cli-quick-btn" onclick="runCLICommand('npm run dev')">🚀 npm run dev</button>
@@ -406,6 +423,15 @@
               <div class="mcp-add-form">
                 <input type="text" class="mcp-input" id="mcp-server-name" placeholder="Server name…" />
                 <input type="text" class="mcp-input" id="mcp-server-cmd" placeholder="Command or URL…" />
+                <div class="mcp-folder-row">
+                  <span class="mcp-folder-label-text">📁 Folder</span>
+                  <label class="mcp-folder-pick-btn" for="mcp-server-folder">
+                    Browse
+                  </label>
+                  <input type="file" id="mcp-server-folder" style="display:none" webkitdirectory multiple
+                         onchange="document.getElementById('mcp-server-folder-name').textContent=this.files.length?this.files[0].webkitRelativePath.split('/')[0]:'No folder selected'" />
+                  <span class="mcp-folder-name" id="mcp-server-folder-name">No folder selected</span>
+                </div>
                 <button class="btn-primary mcp-add-btn" onclick="addMCPServer()">+ Add Server</button>
               </div>
             </div>
@@ -571,6 +597,13 @@
                 <span>Offline-First (Ollama)</span>
                 <input type="checkbox" class="toggle-switch" />
               </label>
+            </div>
+            <div class="settings-section">
+              <div class="section-label">UPLOADED COMPONENTS &amp; EXTENSIONS</div>
+              <div class="settings-note">Folders uploaded to MCP servers and CLI instances.</div>
+              <div id="settings-uploads-list" class="settings-uploads-list">
+                <div class="settings-note">No folders uploaded yet.</div>
+              </div>
             </div>
           </div>
         </div>
