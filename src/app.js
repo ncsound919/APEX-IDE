@@ -772,7 +772,7 @@ function changeFontSize(size) {
   const sizeNum = parseInt(size) || 14;
   const input = document.getElementById('settings-font-size');
   if (input) input.value = sizeNum;
-  if (ApexState.monacoEditor) ApexState.monacoEditor.updateOptions({ fontSize: parseInt(size) });
+  if (ApexState.monacoEditor) ApexState.monacoEditor.updateOptions({ fontSize: sizeNum });
 }
 function toggleVimMode(on) { termPrint('output', `[Settings] Vim mode: ${on ? 'ON' : 'OFF'}`); }
 function toggleWordWrap(on) {
@@ -815,16 +815,16 @@ window.applyDeepCustomization = function () {
   const area = document.getElementById('settings-deep-json');
   if (!area) return;
   let config = {};
-  try { config = JSON.parse(area.value || '{}'); } catch (_) { termPrint('warn', '[Settings] Invalid customization JSON'); return; }
+  try { config = JSON.parse(area.value || '{}'); } catch (err) { termPrint('warn', `[Settings] Invalid customization JSON: ${err?.message || 'parse error'}`); return; }
   if (!config || typeof config !== 'object' || Array.isArray(config)) { termPrint('warn', '[Settings] Customization JSON must be an object'); return; }
 
-  const applyBool = (key, id, fn) => {
+  const applyBool = (key, id, fn = () => {}) => {
     if (typeof config[key] !== 'boolean') return;
     const el = document.getElementById(id);
     if (el) el.checked = config[key];
     fn(config[key]);
   };
-  const applyNum = (key, id, fn) => {
+  const applyNum = (key, id, fn = () => {}) => {
     if (typeof config[key] !== 'number' || !Number.isFinite(config[key])) return;
     const el = document.getElementById(id);
     if (el) el.value = config[key];
@@ -843,8 +843,8 @@ window.applyDeepCustomization = function () {
   if (typeof window.toggleAutoSave === 'function') applyBool('autoSave', 'settings-autosave', window.toggleAutoSave);
   if (typeof window.setAutoSaveDelay === 'function') applyNum('autoSaveDelay', 'settings-autosave-delay', window.setAutoSaveDelay);
   if (typeof window.toggleZenMode === 'function') applyBool('zenMode', 'settings-zen', window.toggleZenMode);
-  applyNum('pomodoroWorkMins', 'settings-pomodoro-work', () => {});
-  applyNum('pomodoroBreakMins', 'settings-pomodoro-break', () => {});
+  applyNum('pomodoroWorkMins', 'settings-pomodoro-work');
+  applyNum('pomodoroBreakMins', 'settings-pomodoro-break');
   if (typeof window.toggleSounds === 'function') applyBool('soundsEnabled', 'settings-sounds', window.toggleSounds);
   if (typeof window.toggleAIChime === 'function') applyBool('aiChimeEnabled', 'settings-ai-chime', window.toggleAIChime);
 
