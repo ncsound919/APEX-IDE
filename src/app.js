@@ -2037,10 +2037,6 @@ function explainError() {
     document.querySelectorAll('.mp-playlist-tab').forEach(t => t.classList.remove('active'));
     if (btn) btn.classList.add('active');
     renderTrackList();
-    // If no track in this pl, allow playlist to add current track
-    const pl = MP.playlists[idx];
-    const addBtn = document.getElementById('mp-add-to-pl-btn');
-    if (addBtn) addBtn.style.display = idx === 0 ? 'none' : '';
   };
 
   function renderPlaylistBar() {
