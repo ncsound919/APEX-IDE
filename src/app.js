@@ -897,7 +897,7 @@ function runSearch(query) {
   const q = matchCase ? query : query.toLowerCase();
   let re = null;
   if (useRegex) {
-    try { re = new RegExp(query, matchCase ? 'g' : 'gi'); } catch (err) {
+    try { re = new RegExp(query, matchCase ? '' : 'i'); } catch (err) {
       const p = document.createElement('p');
       p.className = 'empty-state';
       p.textContent = `Invalid regex: ${err.message || 'parse error'}`;
