@@ -908,6 +908,12 @@ kbd {
   background: none; border: none; cursor: pointer;
 }
 .logic-step:hover .logic-step-delete { opacity: 1; }
+.logic-step:focus-within .logic-step-delete { opacity: 1; }
+.logic-step-delete:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent-pink);
+  outline-offset: 2px;
+}
 .logic-step-delete:hover { color: var(--accent-pink); }
 .logic-add-form {
   padding: 8px 10px; border-top: 1px solid var(--border); flex-shrink: 0;
