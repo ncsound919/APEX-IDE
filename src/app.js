@@ -1074,17 +1074,20 @@ function renderChatBubble(role, content) {
   const messages = document.getElementById('chat-messages');
   if (!messages) return;
 
+  // Constrain role to expected values to avoid CSS class injection
+  const safeRole = role === 'user' ? 'user' : 'assistant';
+
   const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const avatar = role === 'user' ? '👤' : '🧠';
-  const roleLabel = role === 'user' ? 'YOU' : 'APEX AI';
+  const avatar = safeRole === 'user' ? '👤' : '🧠';
+  const roleLabel = safeRole === 'user' ? 'YOU' : 'APEX AI';
 
   const msgEl = document.createElement('div');
-  msgEl.className = `chat-message ${role} fade-in`;
+  msgEl.className = `chat-message ${safeRole} fade-in`;
 
   const header = `
     <div class="chat-msg-header">
       <span class="chat-msg-avatar">${avatar}</span>
-      <span class="chat-msg-role ${role}">${roleLabel}</span>
+      <span class="chat-msg-role ${safeRole}">${roleLabel}</span>
       <span class="chat-msg-time">${time}</span>
     </div>`;
 
