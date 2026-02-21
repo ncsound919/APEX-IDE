@@ -118,7 +118,12 @@ function finishOnboarding() {
     mode: ApexState.mode,
     projectName: ApexState.projectName,
     projectType: ApexState.projectType,
-    ollama: ApexState.keys.ollama,
+    keys: {
+      openai: ApexState.keys.openai,
+      anthropic: ApexState.keys.anthropic,
+      deepseek: ApexState.keys.deepseek,
+      ollama: ApexState.keys.ollama,
+    },
   }));
 
   document.getElementById('onboarding-overlay').classList.add('hidden');
