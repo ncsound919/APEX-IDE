@@ -117,6 +117,7 @@
           <span class="provider-dot yellow" title="DeepSeek Degraded"></span>
           <span class="provider-dot red" title="Ollama Offline"></span>
         </div>
+        <span class="backend-badge" id="backend-badge" title="Backend server status — run: npm run backend">⬡ SIM</span>
         <button class="topbar-btn" onclick="togglePanel('vibe-layer')" title="Vibe Layer">🎯</button>
         <button class="topbar-btn" onclick="togglePanel('monetization')" title="Monetization">💰</button>
         <span class="user-badge" id="user-badge">👤 User</span>
@@ -137,6 +138,7 @@
         <button class="activity-btn" data-panel="domains" onclick="switchActivity('domains',this)" title="Domain Adapters">🎛️</button>
         <button class="activity-btn" data-panel="cli" onclick="switchActivity('cli',this)" title="CLI Runner">💻</button>
         <button class="activity-btn" data-panel="mcp" onclick="switchActivity('mcp',this)" title="MCP Servers">🔌</button>
+        <button class="activity-btn" data-panel="backend" onclick="switchActivity('backend',this)" title="Backend Server">🖥️</button>
         <button class="activity-btn" data-panel="music-player" onclick="switchActivity('music-player',this)" title="Music Player">🎵</button>
         <div class="activity-spacer"></div>
         <button class="activity-btn" data-panel="settings" onclick="switchActivity('settings',this)" title="Settings">⚙️</button>
@@ -738,6 +740,51 @@
             <div class="settings-section">
               <div class="section-label">DANGER ZONE</div>
               <button class="btn-danger" onclick="clearAllSettings()">🗑️ Clear All Settings &amp; Reset</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Backend Server Panel -->
+        <div class="panel" id="panel-backend">
+          <div class="panel-header"><span>BACKEND SERVER</span></div>
+          <div class="backend-panel">
+            <div class="backend-status-section">
+              <div class="section-label">SERVER STATUS</div>
+              <div class="backend-status-card" id="backend-status-card">
+                <div class="backend-status-icon" id="backend-status-icon">⬡</div>
+                <div class="backend-status-info">
+                  <div class="backend-status-title" id="backend-status-title">Offline</div>
+                  <div class="backend-status-sub" id="backend-status-sub">Run: npm run backend</div>
+                </div>
+                <button class="backend-reconnect-btn" onclick="backendReconnect()">↻ Probe</button>
+              </div>
+            </div>
+            <div class="backend-status-section">
+              <div class="section-label">CAPABILITIES</div>
+              <div class="backend-cap-list">
+                <div class="backend-cap-row"><span class="backend-cap-icon">📁</span><span>Real Filesystem Read/Write</span></div>
+                <div class="backend-cap-row"><span class="backend-cap-icon">⎇</span><span>Real Git Operations</span></div>
+                <div class="backend-cap-row"><span class="backend-cap-icon">💻</span><span>Real Terminal &amp; CLI Execution</span></div>
+                <div class="backend-cap-row"><span class="backend-cap-icon">🧠</span><span>LLM API Proxy (CORS-free)</span></div>
+                <div class="backend-cap-row"><span class="backend-cap-icon">🔍</span><span>Server-side Code Linting</span></div>
+              </div>
+            </div>
+            <div class="backend-status-section">
+              <div class="section-label">QUICK COMMANDS</div>
+              <button class="domain-action-btn" onclick="backendExecAndShow('git log --oneline -10')">📋 git log</button>
+              <button class="domain-action-btn" onclick="backendExecAndShow('git status')">⎇ git status</button>
+              <button class="domain-action-btn" onclick="backendExecAndShow('ls -la')">📁 ls -la</button>
+              <button class="domain-action-btn" onclick="backendExecAndShow('node --version && npm --version')">🟢 node/npm version</button>
+              <button class="domain-action-btn" onclick="backendExecAndShow('cat package.json')">📋 package.json</button>
+            </div>
+            <div class="backend-status-section">
+              <div class="section-label">HOW TO START</div>
+              <div class="backend-howto">
+                <code>cd APEX-IDE</code><br>
+                <code>npm run backend</code><br><br>
+                The backend runs on <code>http://localhost:3001</code><br>
+                and auto-connects when the IDE loads.
+              </div>
             </div>
           </div>
         </div>

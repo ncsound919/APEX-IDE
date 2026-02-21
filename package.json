@@ -5,7 +5,9 @@
   "main": "index.html",
   "scripts": {
     "start": "npx serve . -p 3000",
-    "dev": "npx serve . -p 3000 --no-clipboard"
+    "dev": "npx serve . -p 3000 --no-clipboard",
+    "backend": "cd backend && npm start",
+    "backend:install": "cd backend && npm install"
   },
   "keywords": [
     "ide",

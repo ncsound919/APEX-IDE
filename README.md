@@ -68,12 +68,82 @@ Built from the [`Desktop IDE`](Desktop%20IDE) JSON specification:
 # Install dependencies
 npm install
 
-# Launch dev server
+# Launch dev server (frontend only — simulation mode)
 npm start
 # → http://localhost:3000
 ```
 
 Or just open `index.html` directly in a modern browser.
+
+## Backend Server (Real Industry Power)
+
+The optional backend server unlocks real execution — no more simulation:
+
+| Feature | Without Backend | With Backend |
+|---------|----------------|--------------|
+| **Terminal** | Simulated commands | Real shell (bash/sh) via WebSocket |
+| **File System** | Static demo tree | Real read/write/create/delete |
+| **Git** | Fake output | Real git status/commit/pull/push/branch/log |
+| **CLI Runner** | Simulated npm/vite | Real command execution |
+| **Save File** | Log message only | Actually writes to disk |
+| **LLM Proxy** | Direct browser fetch (CORS issues) | Proxied through backend (CORS-free) |
+| **Code Lint** | None | Server-side syntax checking |
+
+```bash
+# Start backend (in a separate terminal)
+npm run backend
+# → APEX Backend running on http://127.0.0.1:3001
+
+# Start frontend in another terminal
+npm start
+# → http://localhost:3000
+```
+
+The IDE auto-detects the backend on startup. The topbar badge shows **⬡ LIVE** when connected or **⬡ SIM** in simulation mode.
+
+### Backend API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/health` | Server health & info |
+| `GET` | `/api/files` | List directory tree |
+| `GET` | `/api/files/read` | Read file content |
+| `POST` | `/api/files/write` | Write file content |
+| `POST` | `/api/files/create` | Create file or folder |
+| `DELETE` | `/api/files` | Delete file or folder |
+| `POST` | `/api/files/rename` | Rename/move file |
+| `GET` | `/api/git/status` | Git working tree status |
+| `GET` | `/api/git/log` | Recent commit history |
+| `GET` | `/api/git/diff` | Diff of working tree |
+| `POST` | `/api/git/commit` | Stage all and commit |
+| `POST` | `/api/git/pull` | Pull from remote |
+| `POST` | `/api/git/push` | Push to remote |
+| `POST` | `/api/git/branch` | Create new branch |
+| `POST` | `/api/exec` | Execute shell command |
+| `POST` | `/api/llm/proxy` | Proxy LLM API calls |
+| `POST` | `/api/lint` | Lint code server-side |
+| `WS` | `/ws/terminal` | Real interactive terminal |
+
+## Security Considerations
+
+The APEX IDE backend exposes powerful operations, including:
+
+- Arbitrary command execution via `/api/exec`
+- Interactive terminal sessions via `/ws/terminal`
+- Read/write access to the local filesystem and Git repositories
+
+**This backend is intended _only_ for use in trusted, local development environments.**
+
+- By default, the server binds to `localhost`, but this does **not** remove all risk.
+- There is **no authentication** built in; any process or user on the same machine that can reach the port can issue requests.
+- Do **not** expose the backend directly to the internet or to untrusted networks (e.g., via port forwarding, reverse proxies, or public cloud hosts) without adding your own strong authentication, authorization, and network controls.
+- Avoid running the backend on multi-user or shared machines where untrusted users have access.
+- Be aware that running the backend grants its process the same level of access to your files and system as the user account that started it.
+- Terminal WebSocket sessions are automatically closed after **30 minutes of inactivity**.
+- All file paths are sandboxed to the project root — no path traversal is permitted.
+- All API routes are rate-limited (300 FS requests/min, 60 exec/lint requests/min).
+
+Use this backend only when you understand and accept these risks. For production or shared environments, you should treat this code as a starting point and add appropriate security hardening (authentication, authorization, sandboxing, and network isolation).
 
 ## Keyboard Shortcuts
 
@@ -128,8 +198,11 @@ APEX-IDE/
 ├── index.html          # Main entry point (all components)
 ├── src/
 │   ├── styles.css      # Hip-hop theme (CSS variables + components)
-│   └── app.js          # Application logic, state, terminal, Monaco init
-├── package.json        # npm config + dev server
+│   └── app.js          # Application logic + ApexBackend client
+├── backend/
+│   ├── server.js       # Node.js backend (Express + WebSocket)
+│   └── package.json    # Backend dependencies (express, cors, ws)
+├── package.json        # npm config + frontend & backend scripts
 └── Desktop IDE         # Original JSON specification
 ```
 

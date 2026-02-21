@@ -5,67 +5,164 @@
 
 'use strict';
 
-const APEX_VERSION = '2.0.0';
-const MAX_IMPORT_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+/* ═══════════════════════════════════════════════════════════════════════
+   ApexBackend — connects to the optional Node.js backend server.
+   When the backend is running (npm run backend), real filesystem,
+   git operations, terminal sessions, and LLM proxying are enabled.
+   Falls back gracefully to simulation mode when offline.
+   ═══════════════════════════════════════════════════════════════════════ */
+const ApexBackend = (() => {
+  const BASE      = 'http://127.0.0.1:3001';
+  const WS_URL    = 'ws://127.0.0.1:3001/ws/terminal';
+  let connected   = false;
+  let _ws         = null;        // active WebSocket terminal session
+  let _wsHandlers = [];          // queued { onData, onExit } callbacks
 
-/* ─── Theme Definitions ───────────────────────────────────────────── */
-const THEMES = {
-  'hiphop-dark': {
-    '--bg-primary': '#0d0d0f', '--bg-secondary': '#141418', '--bg-tertiary': '#1c1c22',
-    '--bg-hover': '#22222a', '--bg-active': '#2a2a36', '--accent-gold': '#f5c518',
-    '--accent-pink': '#ff2d78', '--accent-cyan': '#00e5ff', '--accent-purple': '#9b59ff',
-    '--text-primary': '#f0f0f5', '--text-secondary': '#9999aa', '--text-muted': '#555566',
-    '--border': '#2a2a36', '--border-bright': '#44445a',
-    monacoTheme: 'apex-dark',
-  },
-  'midnight-blue': {
-    '--bg-primary': '#0a0e1a', '--bg-secondary': '#111827', '--bg-tertiary': '#1e293b',
-    '--bg-hover': '#253049', '--bg-active': '#334155', '--accent-gold': '#60a5fa',
-    '--accent-pink': '#f472b6', '--accent-cyan': '#22d3ee', '--accent-purple': '#a78bfa',
-    '--text-primary': '#f1f5f9', '--text-secondary': '#94a3b8', '--text-muted': '#475569',
-    '--border': '#1e293b', '--border-bright': '#334155',
-    monacoTheme: 'vs-dark',
-  },
-  'solarized-dark': {
-    '--bg-primary': '#002b36', '--bg-secondary': '#073642', '--bg-tertiary': '#0a4050',
-    '--bg-hover': '#0d4f60', '--bg-active': '#115e70', '--accent-gold': '#b58900',
-    '--accent-pink': '#d33682', '--accent-cyan': '#2aa198', '--accent-purple': '#6c71c4',
-    '--text-primary': '#fdf6e3', '--text-secondary': '#93a1a1', '--text-muted': '#586e75',
-    '--border': '#073642', '--border-bright': '#586e75',
-    monacoTheme: 'vs-dark',
-  },
-  'light': {
-    '--bg-primary': '#ffffff', '--bg-secondary': '#f5f5f5', '--bg-tertiary': '#e8e8e8',
-    '--bg-hover': '#dcdcdc', '--bg-active': '#d0d0d0', '--accent-gold': '#d97706',
-    '--accent-pink': '#db2777', '--accent-cyan': '#0891b2', '--accent-purple': '#7c3aed',
-    '--text-primary': '#1a1a1a', '--text-secondary': '#555555', '--text-muted': '#999999',
-    '--border': '#e0e0e0', '--border-bright': '#cccccc',
-    monacoTheme: 'vs',
-  },
-};
-
-function encodeBase64(str) {
-  // Prefer browser btoa when available
-  if (typeof btoa === 'function') {
-    // Ensure UTF-8 safety
-    return btoa(unescape(encodeURIComponent(str)));
+  /* ── REST helpers ── */
+  async function api(method, path, body) {
+    const opts = {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+    };
+    if (body !== undefined) opts.body = JSON.stringify(body);
+    const res = await fetch(BASE + path, opts);
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+    return json;
   }
-  // Fallback for Node/Electron environments
-  if (typeof Buffer !== 'undefined') {
-    return Buffer.from(str, 'utf8').toString('base64');
-  }
-  // Last-resort, deterministic hex encoding
-  return Array.from(str)
-    .map(function (ch) { return ch.charCodeAt(0).toString(16).padStart(2, '0'); })
-    .join('');
-}
 
-function getFileId(name) {
-  var encoded = encodeBase64(String(name));
-  // Make the Base64 string safe for use in IDs/keys
-  encoded = encoded.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-  return 'file-' + encoded;
-}
+  const get  = (path)        => api('GET',    path);
+  const post = (path, body)  => api('POST',   path, body);
+  const del  = (path, body)  => api('DELETE', path, body);
+
+  /* ── Health probe ── */
+  async function probe() {
+    const timeoutMs = 1500;
+    try {
+      const controller = (typeof AbortController !== 'undefined')
+        ? new AbortController()
+        : null;
+      const fetchOptions = controller ? { signal: controller.signal } : {};
+      const fetchPromise = fetch(BASE + '/api/health', fetchOptions)
+        .then(r => (r.ok ? r.json() : null))
+        .catch(() => null);
+      const timeoutPromise = new Promise(resolve => {
+        setTimeout(() => {
+          if (controller) {
+            try {
+              controller.abort();
+            } catch (_) {
+              // ignore abort errors
+            }
+          }
+          resolve(null);
+        }, timeoutMs);
+      });
+      const data = await Promise.race([fetchPromise, timeoutPromise]);
+      connected = !!(data && data.status === 'ok');
+    } catch (_) {
+      connected = false;
+    }
+    return connected;
+  }
+
+  /* ── File System ── */
+  const files = {
+    list:   (path, depth) => get(`/api/files?path=${encodeURIComponent(path || '')}&depth=${depth || 3}`),
+    read:   (path)        => get(`/api/files/read?path=${encodeURIComponent(path)}`),
+    write:  (path, content) => post('/api/files/write',  { path, content }),
+    create: (path, type)    => post('/api/files/create', { path, type }),
+    remove: (path)          => del('/api/files',         { path }),
+    rename: (from, to)      => post('/api/files/rename', { from, to }),
+  };
+
+  /* ── Git ── */
+  const git = {
+    status:   ()       => get('/api/git/status'),
+    log:      (n)      => get(`/api/git/log?n=${n || 20}`),
+    diff:     (file)   => get(`/api/git/diff${file ? '?file=' + encodeURIComponent(file) : ''}`),
+    branches: ()       => get('/api/git/branches'),
+    commit:   (msg)    => post('/api/git/commit',   { message: msg }),
+    pull:     ()       => post('/api/git/pull',     {}),
+    push:     ()       => post('/api/git/push',     {}),
+    branch:   (name)   => post('/api/git/branch',   { name }),
+    checkout: (branch) => post('/api/git/checkout', { branch }),
+  };
+
+  /* ── Exec ── */
+  const exec = (command, cwd, timeout) =>
+    post('/api/exec', { command, cwd, timeout });
+
+  /* ── LLM Proxy ── */
+  const llmProxy = (provider, model, messages, system, apiKey, ollamaEndpoint) =>
+    post('/api/llm/proxy', { provider, model, messages, system, apiKey, ollamaEndpoint });
+
+  /* ── WebSocket Terminal ── */
+  function openTerminal(onData, onExit) {
+    if (_ws && (_ws.readyState === WebSocket.OPEN || _ws.readyState === WebSocket.CONNECTING)) {
+      _wsHandlers.push({ onData, onExit });
+      return _ws;
+    }
+    try {
+      const ws = new WebSocket(WS_URL);
+      _ws = ws;
+      _wsHandlers = [{ onData, onExit }];
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (!msg || typeof msg.type === 'undefined') {
+            if (typeof console !== 'undefined' && console && console.warn) {
+              console.warn('[ApexBackend] WebSocket message missing "type" field:', msg);
+            }
+          }
+          _wsHandlers.forEach(h => {
+            if (msg.type === 'exit') h.onExit && h.onExit(msg.data);
+            else h.onData && h.onData(msg.type, msg.data);
+          });
+        } catch (err) {
+          if (typeof console !== 'undefined' && console && console.error) {
+            console.error('[ApexBackend] Failed to parse WebSocket message:', err, 'raw data:', e && e.data);
+          }
+        }
+      };
+      ws.onclose = () => {
+        _ws = null;
+        _wsHandlers.forEach(h => h.onExit && h.onExit('Terminal disconnected'));
+        _wsHandlers = [];
+      };
+      ws.onerror = () => ws.close();
+      return ws;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function sendTerminalInput(text) {
+    if (_ws && _ws.readyState === WebSocket.OPEN) {
+      _ws.send(JSON.stringify({ type: 'input', data: text }));
+      return true;
+    }
+    return false;
+  }
+
+  function closeTerminal() {
+    if (_ws) { try { _ws.close(); } catch (_) {} _ws = null; }
+    _wsHandlers = [];
+  }
+
+  return {
+    get connected() { return connected; },
+    probe,
+    files,
+    git,
+    exec,
+    llmProxy,
+    openTerminal,
+    sendTerminalInput,
+    closeTerminal,
+  };
+})();
 
 /* ─── State ──────────────────────────────────────────────────────── */
 const ApexState = {
@@ -151,6 +248,7 @@ const COMMANDS = [
   { icon: '🚀', label: 'Start Megacode Session',  shortcut: '',              fn: () => startMegacode()       },
   { icon: '💻', label: 'Open CLI Runner',          shortcut: 'Ctrl+Shift+C',  fn: () => switchActivity('cli') },
   { icon: '🔌', label: 'Open MCP Servers',         shortcut: 'Ctrl+Shift+M',  fn: () => switchActivity('mcp') },
+  { icon: '🖥️', label: 'Open Backend Panel',        shortcut: '',              fn: () => switchActivity('backend') },
   { icon: '🖥️', label: 'Open Frontend Visualizer', shortcut: 'Ctrl+Alt+V',  fn: () => openVisualizerTab()   },
   { icon: '🔄', label: 'Restart IDE',             shortcut: '',              fn: () => location.reload()     },
   // Chat & AI
@@ -258,6 +356,21 @@ function initApp() {
   applyProjectTheme();
   initChat();
   loadMonaco();
+
+  // Probe backend — connects real filesystem, terminal, git, and LLM proxy
+  ApexBackend.probe().then(ok => {
+    if (ok) {
+      log('[INFO] Backend connected ✓ — real filesystem, git, terminal & LLM proxy active');
+      termPrint('output', '[Backend] ✓ APEX backend connected — real execution enabled');
+      updateProviderStatus();
+      loadRealFileTree();
+      connectRealTerminal();
+      refreshGitStatus();
+    } else {
+      log('[INFO] Backend offline — running in simulation mode (run: npm run backend)');
+    }
+    _refreshBackendPanel();
+  });
 
   // Update breadcrumb project name
   const breadcrumbProject = document.getElementById('breadcrumb-project');
@@ -472,6 +585,36 @@ function showPane(name) {
 function showMonacoPaneFor(node) {
   showPane('editor');
   if (ApexState.monacoEditor && typeof monaco !== 'undefined') {
+    const langMap = { js: 'javascript', ts: 'typescript', css: 'css', html: 'html', json: 'json', md: 'markdown', py: 'python', go: 'go', rs: 'rust', sh: 'shell', yml: 'yaml', yaml: 'yaml', toml: 'ini', rb: 'ruby', java: 'java', cpp: 'cpp', c: 'c', cs: 'csharp' };
+    const ext = node.name.split('.').pop().toLowerCase();
+    const lang = langMap[ext] || 'plaintext';
+
+    const applyContent = (text) => {
+      const oldModel = ApexState.monacoEditor.getModel();
+      const model = monaco.editor.createModel(text, lang);
+      ApexState.monacoEditor.setModel(model);
+      try {
+        const oldModel = ApexState.monacoEditor.getModel();
+        const model = monaco.editor.createModel(text, lang);
+        ApexState.monacoEditor.setModel(model);
+        // Store path for save
+        ApexState.activeFilePath = node.backendPath || node.name;
+        if (oldModel && oldModel !== model) oldModel.dispose();
+        document.getElementById('status-lang').textContent = lang.charAt(0).toUpperCase() + lang.slice(1);
+      } catch (err) {
+        // Log errors related to Monaco model creation or disposal
+        console.error('Failed to update Monaco editor model:', err);
+      }
+    };
+
+    // Load real content if backend is connected
+    if (ApexBackend.connected && node.backendPath) {
+      ApexBackend.files.read(node.backendPath)
+        .then(r => applyContent(r.content || ''))
+        .catch(() => applyContent(`// ${node.name}\n`));
+    } else {
+      applyContent(`// ${node.name}\n`);
+    }
     const langMap = { js: 'javascript', ts: 'typescript', css: 'css', html: 'html', json: 'json', md: 'markdown', py: 'python', go: 'go', rs: 'rust', sh: 'shell', txt: 'plaintext' };
     const ext = node.name.split('.').pop().toLowerCase();
     const lang = langMap[ext] || 'plaintext';
@@ -546,15 +689,70 @@ function togglePanel(name) {
 function gitCommit() {
   const msg = document.querySelector('.commit-input')?.value;
   if (!msg) { termPrint('warn', 'Please enter a commit message.'); return; }
-  termPrint('output', `[git] Committing: "${msg}"`);
-  termPrint('output', '[git] ✓ Created commit abc1234');
+  if (ApexBackend.connected) {
+    termPrint('output', `[git] Committing: "${msg}"…`);
+    ApexBackend.git.commit(msg)
+      .then(r => { termPrint('output', `[git] ${r.output || '✓ Committed'}`); refreshGitStatus(); })
+      .catch(e => termPrint('error', `[git] ${e.message}`));
+  } else {
+    termPrint('output', `[git] Committing: "${msg}"`);
+    termPrint('output', '[git] ✓ Created commit abc1234 (simulation)');
+  }
 }
 
-function gitPull() { termPrint('output', '[git] Pulling from origin/main…\n[git] Already up to date.'); }
-function gitPush() { termPrint('output', '[git] Pushing to origin/main…\n[git] ✓ Successfully pushed.'); }
+function gitPull() {
+  if (ApexBackend.connected) {
+    termPrint('output', '[git] Pulling from origin…');
+    ApexBackend.git.pull()
+      .then(r => { termPrint('output', `[git] ${r.output || 'Already up to date.'}`); refreshGitStatus(); })
+      .catch(e => termPrint('error', `[git] ${e.message}`));
+  } else {
+    termPrint('output', '[git] Pulling from origin/main…\n[git] Already up to date.');
+  }
+}
+function gitPush() {
+  if (ApexBackend.connected) {
+    termPrint('output', '[git] Pushing to origin…');
+    ApexBackend.git.push()
+      .then(r => termPrint('output', `[git] ${r.output || '✓ Successfully pushed.'}`))
+      .catch(e => termPrint('error', `[git] ${e.message}`));
+  } else {
+    termPrint('output', '[git] Pushing to origin/main…\n[git] ✓ Successfully pushed.');
+  }
+}
 function gitBranch() {
   const name = prompt('New branch name:');
-  if (name) termPrint('output', `[git] Created branch: ${name}`);
+  if (!name) return;
+  if (ApexBackend.connected) {
+    ApexBackend.git.branch(name)
+      .then(r => { termPrint('output', `[git] ${r.output || 'Created branch: ' + name}`); refreshGitStatus(); })
+      .catch(e => termPrint('error', `[git] ${e.message}`));
+  } else {
+    termPrint('output', `[git] Created branch: ${name}`);
+  }
+}
+
+/* Refresh git status panel when backend is available */
+function refreshGitStatus() {
+  if (!ApexBackend.connected) return;
+  ApexBackend.git.status().then(r => {
+    const statusEl = document.getElementById('git-status');
+    if (!statusEl) return;
+    const lines = (r.output || '').split('\n').filter(Boolean);
+    if (!lines.length) {
+      statusEl.innerHTML = '<div class="git-section"><div class="git-section-header">WORKING TREE CLEAN</div></div>';
+      return;
+    }
+    const branchEl = document.querySelector('.git-branch-name');
+    if (branchEl) branchEl.textContent = r.branch || '';
+    const items = lines.map(l => {
+      const code = l.slice(0, 2).trim();
+      const file = l.slice(3);
+      const cls  = code === 'M' ? 'modified' : code === 'A' ? 'added' : code === 'D' ? 'deleted' : code === '?' ? 'untracked' : 'modified';
+      return `<div class="git-file ${cls}">${code} ${file}</div>`;
+    }).join('');
+    statusEl.innerHTML = `<div class="git-section"><div class="git-section-header">CHANGES (${lines.length})</div>${items}</div>`;
+  }).catch(() => {});
 }
 
 /* ─── Bottom Panel ────────────────────────────────────────────────── */
@@ -612,7 +810,12 @@ function handleTerminalKey(e) {
       ApexState.terminalHistory.unshift(cmd);
       ApexState.terminalHistoryIdx = -1;
       termPrint('cmd', `${document.getElementById('terminal-prompt').textContent} ${cmd}`);
-      processCommand(cmd);
+      // Route to real shell when backend is connected
+      if (ApexBackend.connected && ApexBackend.sendTerminalInput(cmd + '\n')) {
+        // output handled by WebSocket handler
+      } else {
+        processCommand(cmd);
+      }
       input.value = '';
     }
   } else if (e.key === 'ArrowUp') {
@@ -759,7 +962,94 @@ function processCommand(raw) {
   if (CMD_HANDLERS[full]) { CMD_HANDLERS[full](args); return; }
   if (CMD_HANDLERS[cmd])  { CMD_HANDLERS[cmd](args);  return; }
 
+  // When backend is connected, execute unknown commands for real
+  if (ApexBackend.connected) {
+    termPrint('output', `$ ${raw}`);
+    ApexBackend.exec(raw)
+      .then(r => {
+        if (r.output) r.output.trimEnd().split('\n').forEach(l => termPrint('output', l));
+        if (r.error)  r.error.trimEnd().split('\n').forEach(l => termPrint('error',  l));
+        if (r.exitCode !== 0 && !r.output && !r.error) {
+          termPrint('error', `Process exited with code ${r.exitCode}`);
+        }
+      })
+      .catch(e => termPrint('error', e.message));
+    return;
+  }
+
   termPrint('error', `command not found: ${cmd}`);
+}
+
+/* ─── Backend Integration Helpers ────────────────────────────────── */
+
+/** Load real file tree from backend and refresh Explorer */
+function loadRealFileTree() {
+  ApexBackend.files.list('', 4).then(r => {
+    if (!r.tree || !r.tree.length) return;
+    // Convert backend tree to SAMPLE_TREE format
+    function convert(nodes) {
+      return nodes.map(n => ({
+        name: n.name,
+        type: n.type,
+        depth: 0,
+        open: n.name === 'src',
+        lang: n.type === 'file' ? (n.name.split('.').pop() || 'text') : undefined,
+        children: n.children ? convert(n.children) : undefined,
+        backendPath: n.path,
+      }));
+    }
+    SAMPLE_TREE.length = 0;
+    convert(r.tree).forEach(n => SAMPLE_TREE.push(n));
+    renderFileTree();
+    log('[INFO] File tree loaded from filesystem ✓');
+  }).catch(() => {});
+}
+
+/** Connect real WebSocket terminal session */
+function connectRealTerminal() {
+  ApexBackend.openTerminal(
+    (type, data) => {
+      const lines = data.split('\n');
+      lines.forEach((line, i) => {
+        if (i === lines.length - 1 && !line) return; // skip trailing empty
+        termPrint(type === 'error' ? 'error' : 'output', line);
+      });
+    },
+    (exitMsg) => {
+      termPrint('warn', `[Terminal] ${exitMsg}`);
+    }
+  );
+  log('[INFO] Real shell terminal connected via WebSocket ✓');
+}
+
+/** Update provider status dots and backend badge */
+function updateProviderStatus() {
+  // Update backend badge
+  const badge = document.getElementById('backend-badge');
+  if (badge) {
+    badge.textContent  = ApexBackend.connected ? '⬡ LIVE' : '⬡ SIM';
+    badge.classList.toggle('backend-live', ApexBackend.connected);
+    badge.title = ApexBackend.connected
+      ? 'Backend connected — real execution active'
+      : 'Backend offline — simulation mode (run: npm run backend)';
+  }
+
+  const statusBar = document.getElementById('provider-status');
+  if (!statusBar) return;
+  // Recolor Ollama dot based on reachability
+  const dots = statusBar.querySelectorAll('.provider-dot');
+  if (dots.length >= 4) {
+    const ollamaEndpoint = (ApexState.keys.ollama || 'http://localhost:11434').replace(/\/$/, '');
+    fetch(`${ollamaEndpoint}/api/tags`, { signal: AbortSignal.timeout(1500) })
+      .then(r => {
+        dots[3].className = r.ok ? 'provider-dot green' : 'provider-dot red';
+        dots[3].title     = r.ok ? 'Ollama Online' : 'Ollama Offline';
+      })
+      .catch(() => {
+        dots[3].className = 'provider-dot red';
+        dots[3].title     = 'Ollama Offline';
+      });
+  }
 }
 
 /* ─── Vibe Layer ──────────────────────────────────────────────────── */
@@ -917,7 +1207,52 @@ function startOllama() {
   termPrint('output', '[Ollama] Run: ollama serve  in your system terminal');
 }
 
-/* ─── Megacode Session ────────────────────────────────────────────── */
+/* ─── Backend Panel Helpers ───────────────────────────────────────── */
+function backendReconnect() {
+  termPrint('output', '[Backend] Probing backend server…');
+  ApexBackend.probe().then(ok => {
+    if (ok) {
+      termPrint('output', '[Backend] ✓ Connected — real execution enabled');
+      updateProviderStatus();
+      loadRealFileTree();
+      connectRealTerminal();
+    } else {
+      termPrint('warn', '[Backend] Not reachable — run: npm run backend');
+    }
+    _refreshBackendPanel();
+  });
+}
+
+function backendExecAndShow(cmd) {
+  if (!ApexBackend.connected) {
+    termPrint('warn', '[Backend] Not connected — run: npm run backend');
+    switchActivity('backend');
+    return;
+  }
+  termPrint('output', `$ ${cmd}`);
+  switchBottomTab('terminal', document.querySelector('.bottom-tab[data-tab="terminal"]') || document.querySelector('.bottom-tab'));
+  ApexBackend.exec(cmd)
+    .then(r => {
+      if (r.output) r.output.trimEnd().split('\n').forEach(l => termPrint('output', l));
+      if (r.error)  r.error.trimEnd().split('\n').forEach(l => termPrint('error', l));
+    })
+    .catch(e => termPrint('error', e.message));
+}
+
+function _refreshBackendPanel() {
+  const card    = document.getElementById('backend-status-card');
+  const icon    = document.getElementById('backend-status-icon');
+  const title   = document.getElementById('backend-status-title');
+  const sub     = document.getElementById('backend-status-sub');
+  if (!card) return;
+  const ok = ApexBackend.connected;
+  card.className  = `backend-status-card${ok ? ' connected' : ''}`;
+  if (icon)  icon.textContent  = ok ? '✓' : '⬡';
+  if (title) title.textContent = ok ? 'Connected' : 'Offline';
+  if (sub)   sub.textContent   = ok ? 'http://127.0.0.1:3001 — LIVE mode active' : 'Run: npm run backend';
+}
+
+
 function startMegacode() {
   // Focus terminal and run megacode command
   switchBottomTab('terminal', document.querySelector('.bottom-tab'));
@@ -949,6 +1284,18 @@ function newFolder() {
 }
 
 function refreshExplorer() { renderFileTree(); termPrint('output', '[Explorer] Refreshed'); }
+function saveFile() {
+  if (ApexBackend.connected && ApexState.monacoEditor && ApexState.activeFilePath) {
+    const content = ApexState.monacoEditor.getValue();
+    ApexBackend.files.write(ApexState.activeFilePath, content)
+      .then(() => {
+        termPrint('output', `[Editor] Saved: ${ApexState.activeFilePath}`);
+        log(`[INFO] Saved ${ApexState.activeFilePath}`);
+      })
+      .catch(e => termPrint('error', `[Editor] Save failed: ${e.message}`));
+  } else {
+    termPrint('output', '[Editor] File saved');
+  }
 
 function saveFile() {
   if (!ApexState.monacoEditor || ApexState.activeTab === 'welcome') {
@@ -1348,6 +1695,24 @@ function cliSimulate(cmd, lines) {
 
 function runCLICommand(cmd) {
   switchActivity('cli');
+
+  // Use real execution when backend is connected
+  if (ApexBackend.connected) {
+    cliPrint('cmd', `$ ${cmd}`);
+    ApexBackend.exec(cmd, null, 60000)
+      .then(r => {
+        if (r.output) r.output.trimEnd().split('\n').forEach(l => cliPrint('output', l));
+        if (r.error)  r.error.trimEnd().split('\n').forEach(l => cliPrint('error',  l));
+        cliPrint('info', `[Done] exit ${r.exitCode}`);
+      })
+      .catch(e => {
+        cliPrint('error', e.message);
+        cliPrint('info', '[Failed]');
+      });
+    return;
+  }
+
+  // Simulation fallback
   const handler = CLI_QUICK_COMMANDS[cmd];
   if (handler) {
     handler();
@@ -2215,6 +2580,34 @@ function insertChatCode(blockId) {
 
 async function callLLMAPI(history, model, systemPrompt) {
   const { openai, anthropic, deepseek, ollama } = ApexState.keys;
+
+  // Route through backend proxy when available — solves CORS and keeps keys server-side safe
+  if (ApexBackend.connected) {
+    let provider = 'openai';
+    if ((model || '').startsWith('claude'))   provider = 'anthropic';
+    else if ((model || '').startsWith('deepseek')) provider = 'deepseek';
+    else if (!model || model === 'ollama' || (!model.startsWith('gpt') && !model.startsWith('o1') && !model.startsWith('o3'))) provider = 'ollama';
+
+    const apiKey = provider === 'anthropic' ? anthropic
+                 : provider === 'deepseek'  ? deepseek
+                 : provider === 'openai'    ? openai
+                 : '';
+
+    const data = await ApexBackend.llmProxy(provider, model, history, systemPrompt || '', apiKey, ollama);
+
+    // Parse provider-specific response shapes
+    if (provider === 'anthropic') {
+      const item = Array.isArray(data.content) && data.content[0];
+      if (!item || typeof item.text !== 'string') throw new Error('Anthropic proxy returned unexpected response');
+      return item.text;
+    }
+    if (provider === 'ollama') {
+      return data.message?.content || data.response || '';
+    }
+    const choice = Array.isArray(data.choices) && data.choices[0];
+    if (!choice || typeof choice.message?.content !== 'string') throw new Error('LLM proxy returned unexpected response');
+    return choice.message.content;
+  }
 
   const messages = systemPrompt
     ? [{ role: 'system', content: systemPrompt }, ...history]
