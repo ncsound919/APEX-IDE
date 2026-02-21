@@ -1368,7 +1368,7 @@ function parseBuildPlanText(text) {
     /^\s*\d+[\.\)]\s+(.+)/,       // 1. Step  or  1) Step
     /^\s*[-*•]\s+(.+)/,           // - Step  or  * Step
     /^\s*step\s+\d+[:\s]+(.+)/i, // Step 1: text
-    /^\s*\[[ x-]\]\s+(.+)/,      // [ ] Step  or  [x] Step
+    /^\s*\[[ xX-]\]\s+(.+)/,     // [ ] Step  or  [x]/[X] Step
   ];
   lines.forEach(line => {
     for (const pattern of patterns) {
