@@ -265,11 +265,26 @@ function addTabUI(id, name, icon) {
   tab.className = 'tab';
   tab.dataset.file = id;
   tab.onclick = () => activateTab(id);
-  tab.innerHTML = `
-    <span class="tab-icon">${icon}</span>
-    <span class="tab-name">${name}</span>
-    <button class="tab-close" onclick="closeTab(event,'${id}')">×</button>
-  `;
+
+  const iconEl = document.createElement('span');
+  iconEl.className = 'tab-icon';
+  iconEl.textContent = icon;
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'tab-name';
+  nameEl.textContent = name;
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'tab-close';
+  closeBtn.type = 'button';
+  closeBtn.textContent = '×';
+  closeBtn.addEventListener('click', function (event) {
+    closeTab(event, id);
+  });
+
+  tab.appendChild(iconEl);
+  tab.appendChild(nameEl);
+  tab.appendChild(closeBtn);
   tabs.insertBefore(tab, addBtn);
 }
 
