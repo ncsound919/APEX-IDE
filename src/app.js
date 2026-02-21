@@ -811,7 +811,43 @@ window.addEventListener('DOMContentLoaded', () => {
   if (localStorage.getItem('apex_onboarded') && saved) {
     try {
       const s = JSON.parse(saved);
-      Object.assign(ApexState, s);
+      // Map persisted fields explicitly instead of blindly merging
+      if (s && typeof s === 'object') {
+        if (typeof s.userHandle === 'string') {
+          ApexState.userHandle = s.userHandle;
+        }
+        if (typeof s.mode === 'string') {
+          ApexState.mode = s.mode;
+        }
+        if (typeof s.activePanel === 'string') {
+          ApexState.activePanel = s.activePanel;
+        }
+        if (Array.isArray(s.openTabs)) {
+          ApexState.openTabs = s.openTabs;
+        }
+        if (typeof s.activeTab === 'string') {
+          ApexState.activeTab = s.activeTab;
+        }
+        if (Array.isArray(s.fileTree)) {
+          ApexState.fileTree = s.fileTree;
+        }
+        if (Array.isArray(s.terminalHistory)) {
+          ApexState.terminalHistory = s.terminalHistory;
+        }
+        // Restore ollama endpoint: persisted as top-level `ollama`, used as `keys.ollama`
+        if (s.ollama != null) {
+          if (!ApexState.keys || typeof ApexState.keys !== 'object') {
+            ApexState.keys = {};
+          }
+          ApexState.keys.ollama = s.ollama;
+        } else if (s.keys && s.keys.ollama != null) {
+          // Also handle case where it was already nested under keys
+          if (!ApexState.keys || typeof ApexState.keys !== 'object') {
+            ApexState.keys = {};
+          }
+          ApexState.keys.ollama = s.keys.ollama;
+        }
+      }
     } catch (_) { /* ignore */ }
     document.getElementById('onboarding-overlay').classList.add('hidden');
     document.getElementById('app').classList.remove('hidden');
