@@ -123,8 +123,12 @@ The APEX IDE backend exposes powerful operations, including:
 - Do **not** expose the backend directly to the internet or to untrusted networks (e.g., via port forwarding, reverse proxies, or public cloud hosts) without adding your own strong authentication, authorization, and network controls.
 - Avoid running the backend on multi-user or shared machines where untrusted users have access.
 - Be aware that running the backend grants its process the same level of access to your files and system as the user account that started it.
+- Terminal WebSocket sessions are automatically closed after **30 minutes of inactivity**.
+- All file paths are sandboxed to the project root — no path traversal is permitted.
+- All API routes are rate-limited (300 FS requests/min, 60 exec/lint requests/min).
 
 Use this backend only when you understand and accept these risks. For production or shared environments, you should treat this code as a starting point and add appropriate security hardening (authentication, authorization, sandboxing, and network isolation).
+
 ## Keyboard Shortcuts
 
 | Shortcut | Action |

@@ -27,7 +27,9 @@ const PORT              = parseInt(process.env.PORT || process.env.APEX_PORT || 
 const APEX_ROOT         = process.env.APEX_ROOT
   ? path.resolve(process.env.APEX_ROOT)
   : path.resolve(process.cwd(), '..');   // default: parent of backend/ = project root
-const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_FILE_SIZE_BYTES    = 5 * 1024 * 1024;  // 5 MB
+const PROXY_MAX_RESP_BYTES   = 10 * 1024 * 1024; // 10 MB — prevents memory exhaustion from large LLM responses
+const TERMINAL_IDLE_MS       = 30 * 60 * 1000;   // 30 minutes idle → close terminal session
 
 /* ─── Rate Limiters ───────────────────────────────────────────────────── */
 // Local-only server — high limits prevent runaway automation while staying
@@ -54,7 +56,9 @@ const execLimiter = rateLimit({
 function safeResolve(rel) {
   if (!rel) return APEX_ROOT;
   const resolved = path.resolve(APEX_ROOT, rel);
-  if (!resolved.startsWith(APEX_ROOT + path.sep) && resolved !== APEX_ROOT) {
+  // path.relative is cross-platform and handles mixed separators / UNC paths
+  const relative = path.relative(APEX_ROOT, resolved);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
     const err = new Error('Path escapes project root');
     err.code = 'FORBIDDEN';
     throw err;
@@ -148,9 +152,20 @@ function proxyPost(url, headers, body) {
     options.headers['Content-Length'] = Buffer.byteLength(bodyStr);
 
     const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', d => { data += d; });
+      const chunks = [];
+      let bytesReceived = 0;
+      res.on('data', d => {
+        bytesReceived += d.length;
+        if (bytesReceived > PROXY_MAX_RESP_BYTES) {
+          // Reject the promise so the caller's catch block sends a 502 to the client
+          reject(new Error(`Proxy response exceeded size limit (${PROXY_MAX_RESP_BYTES} bytes)`));
+          req.destroy();
+          return;
+        }
+        chunks.push(d);
+      });
       res.on('end', () => {
+        const data = Buffer.concat(chunks).toString('utf8');
         try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
         catch (_) { resolve({ status: res.statusCode, body: data }); }
       });
@@ -484,7 +499,7 @@ app.post('/api/llm/proxy', fsLimiter, async (req, res) => {
 /* ── Lint endpoint ── */
 app.post('/api/lint', execLimiter, async (req, res) => {
   try {
-    const { code, language, path: rel } = req.body;
+    const { code, language } = req.body;
     if (!code) return res.status(400).json({ error: 'code required' });
 
     // Write to a temp file and run appropriate linter
@@ -502,11 +517,21 @@ app.post('/api/lint', execLimiter, async (req, res) => {
       args   = ['--check', tmp];
     }
 
+    // Guard against multiple response sends if both 'close' and 'error' fire
+    let responded = false;
+    function tryCleanup() {
+      try { fs.unlinkSync(tmp); } catch (e) {
+        console.warn(`[Lint] Failed to remove temp file ${tmp}:`, e.message);
+      }
+    }
+
     const proc = spawn(linter, args);
     let errOut = '';
     proc.stderr.on('data', d => { errOut += d; });
     proc.on('close', code => {
-      try { fs.unlinkSync(tmp); } catch (_) {}
+      if (responded) return;
+      responded = true;
+      tryCleanup();
       if (code === 0) {
         res.json({ ok: true, problems: [] });
       } else {
@@ -514,7 +539,9 @@ app.post('/api/lint', execLimiter, async (req, res) => {
       }
     });
     proc.on('error', e => {
-      try { fs.unlinkSync(tmp); } catch (_) {}
+      if (responded) return;
+      responded = true;
+      tryCleanup();
       res.json({ ok: true, problems: [], warn: `Linter unavailable: ${e.message}` });
     });
   } catch (err) {
@@ -545,9 +572,24 @@ wss.on('connection', (ws) => {
     }
   };
 
-  proc.stdout.on('data', d => send('output', d.toString()));
-  proc.stderr.on('data', d => send('error',  d.toString()));
+  // Idle timeout — close sessions that have been silent for TERMINAL_IDLE_MS
+  let idleTimer = setTimeout(() => {
+    send('error', '[Terminal] Session closed due to inactivity');
+    ws.close();
+  }, TERMINAL_IDLE_MS);
+
+  function resetIdle() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      send('error', '[Terminal] Session closed due to inactivity');
+      ws.close();
+    }, TERMINAL_IDLE_MS);
+  }
+
+  proc.stdout.on('data', d => { send('output', d.toString()); resetIdle(); });
+  proc.stderr.on('data', d => { send('error',  d.toString()); resetIdle(); });
   proc.on('close', code => {
+    clearTimeout(idleTimer);
     send('exit', `Process exited with code ${code}`);
     if (ws.readyState === WebSocket.OPEN) ws.close();
   });
@@ -557,6 +599,7 @@ wss.on('connection', (ws) => {
     try {
       const msg = JSON.parse(raw);
       if (msg.type === 'input' && typeof msg.data === 'string') {
+        resetIdle();
         proc.stdin.write(msg.data);
       } else if (msg.type === 'resize') {
         // node-pty resize would go here; no-op without node-pty
@@ -565,6 +608,7 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
+    clearTimeout(idleTimer);
     try { proc.kill(); } catch (_) {}
   });
 });
