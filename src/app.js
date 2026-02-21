@@ -80,7 +80,7 @@ const ApexBackend = (() => {
 
   /* ── WebSocket Terminal ── */
   function openTerminal(onData, onExit) {
-    if (_ws && _ws.readyState === WebSocket.OPEN) {
+    if (_ws && (_ws.readyState === WebSocket.OPEN || _ws.readyState === WebSocket.CONNECTING)) {
       _wsHandlers.push({ onData, onExit });
       return _ws;
     }
