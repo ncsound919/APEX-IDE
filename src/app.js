@@ -490,7 +490,7 @@ function showMonacoPaneFor(node) {
 
     // Restore saved content or use language-appropriate default
     const savedContent = ApexState.fileBuffers[fileId];
-    const content = savedContent != null ? savedContent : '';
+    const content = savedContent ?? '';
 
     const oldModel = ApexState.monacoEditor.getModel();
     const model = monaco.editor.createModel(content, lang);
@@ -963,7 +963,7 @@ function saveFile() {
   try {
     localStorage.setItem('apex_file_buffers', JSON.stringify(ApexState.fileBuffers));
   } catch (err) {
-    if (err && err.name === 'QuotaExceededError') {
+    if (err.name === 'QuotaExceededError') {
       showToast('Storage full — unable to persist file. Consider clearing unused files.', 'error');
     }
   }
