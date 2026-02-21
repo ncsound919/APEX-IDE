@@ -766,8 +766,25 @@ app.get('/api/symbols', fsLimiter, (req, res) => {
 });
 
 /* ── AI Task Orchestrator ── */
-const AI_TASKS = new Map();
+class BoundedMap extends Map {
+  constructor(maxSize, entries) {
+    super(entries);
+    this.maxSize = typeof maxSize === 'number' && maxSize > 0 ? maxSize : Number.MAX_SAFE_INTEGER;
+  }
 
+  set(key, value) {
+    if (!this.has(key) && this.size >= this.maxSize) {
+      const firstKey = this.keys().next().value;
+      if (firstKey !== undefined) {
+        this.delete(firstKey);
+      }
+    }
+    return super.set(key, value);
+  }
+}
+
+const MAX_AI_TASKS = 1000;
+const AI_TASKS = new BoundedMap(MAX_AI_TASKS);
 const AI_TASK_SYSTEM_PROMPTS = {
   generate_code:    'You are an expert software engineer. Generate clean, well-documented, production-ready code based on the given requirements.',
   refactor_module:  'You are an expert software engineer. Refactor the provided code for better readability, performance, and maintainability. Explain key changes.',
