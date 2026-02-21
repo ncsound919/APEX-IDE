@@ -1375,18 +1375,49 @@ function renderWorkspaces() {
     return;
   }
   workspaces.forEach(ws => {
+    const safeId     = CSS.escape(ws.id);
     const card = document.createElement('div');
     card.className = `ws-card ws-status-${ws.status}`;
-    card.innerHTML = `
-      <div class="ws-card-info">
-        <div class="ws-card-name">${ws.name}</div>
-        <div class="ws-card-meta">${ws.branch || 'main'} · ${ws.status.toUpperCase()}</div>
-        ${ws.repo_url ? `<div class="ws-card-repo">${ws.repo_url}</div>` : ''}
-      </div>
-      <div class="ws-card-actions">
-        ${ws.status === 'stopped' ? `<button class="ws-btn green" onclick="workspaceStart('${ws.id}')">▶ Start</button>` : `<button class="ws-btn amber" onclick="workspaceStop('${ws.id}')">⏹ Stop</button>`}
-        <button class="ws-btn red" onclick="workspaceDelete('${ws.id}')">🗑</button>
-      </div>`;
+
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'ws-card-info';
+
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'ws-card-name';
+    nameDiv.textContent = ws.name;
+
+    const metaDiv = document.createElement('div');
+    metaDiv.className = 'ws-card-meta';
+    metaDiv.textContent = `${ws.branch || 'main'} · ${ws.status.toUpperCase()}`;
+
+    infoDiv.appendChild(nameDiv);
+    infoDiv.appendChild(metaDiv);
+
+    if (ws.repo_url) {
+      const repoDiv = document.createElement('div');
+      repoDiv.className = 'ws-card-repo';
+      repoDiv.textContent = ws.repo_url;
+      infoDiv.appendChild(repoDiv);
+    }
+
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'ws-card-actions';
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = ws.status === 'stopped' ? 'ws-btn green' : 'ws-btn amber';
+    toggleBtn.textContent = ws.status === 'stopped' ? '▶ Start' : '⏹ Stop';
+    toggleBtn.addEventListener('click', () => ws.status === 'stopped' ? workspaceStart(ws.id) : workspaceStop(ws.id));
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'ws-btn red';
+    delBtn.textContent = '🗑';
+    delBtn.addEventListener('click', () => workspaceDelete(ws.id));
+
+    actionsDiv.appendChild(toggleBtn);
+    actionsDiv.appendChild(delBtn);
+
+    card.appendChild(infoDiv);
+    card.appendChild(actionsDiv);
     list.appendChild(card);
   });
 }
@@ -1709,9 +1740,27 @@ function renderCollabPanel() {
   const { active, sessionId, peers } = ApexState.collab;
 
   if (sessionEl) {
-    sessionEl.innerHTML = active
-      ? `<div class="collab-session-active"><span class="collab-dot active"></span>Session: <code>${sessionId}</code></div><div class="collab-peers">${peers.length} peer(s) connected</div>`
-      : '<div class="collab-session-inactive"><span class="collab-dot"></span>No active session</div>';
+    sessionEl.innerHTML = '';
+    if (active) {
+      const activeDiv = document.createElement('div');
+      activeDiv.className = 'collab-session-active';
+      const dot = document.createElement('span');
+      dot.className = 'collab-dot active';
+      const label = document.createElement('span');
+      label.textContent = 'Session: ';
+      const code = document.createElement('code');
+      code.textContent = sessionId;  // textContent prevents XSS
+      activeDiv.appendChild(dot);
+      activeDiv.appendChild(label);
+      activeDiv.appendChild(code);
+      const peersDiv = document.createElement('div');
+      peersDiv.className = 'collab-peers';
+      peersDiv.textContent = `${peers.length} peer(s) connected`;
+      sessionEl.appendChild(activeDiv);
+      sessionEl.appendChild(peersDiv);
+    } else {
+      sessionEl.innerHTML = '<div class="collab-session-inactive"><span class="collab-dot"></span>No active session</div>';
+    }
   }
   if (startBtn) startBtn.style.display = active ? 'none' : '';
   if (stopBtn)  stopBtn.style.display  = active ? '' : 'none';

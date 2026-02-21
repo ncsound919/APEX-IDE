@@ -217,6 +217,27 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10mb' }));
 
+/* ── Workspace Telemetry & Metrics ── */
+const _telemetry = {
+  startTime:     Date.now(),
+  fileOps:       0,
+  execOps:       0,
+  llmRequests:   0,
+  searchQueries: 0,
+  traces:        [],  // ring buffer, max 100
+};
+
+// Register telemetry middleware BEFORE routes so every request is counted
+app.use((req, _res, next) => {
+  if (req.path.startsWith('/api/files'))  _telemetry.fileOps++;
+  if (req.path.startsWith('/api/exec'))   _telemetry.execOps++;
+  if (req.path.startsWith('/api/llm'))    _telemetry.llmRequests++;
+  if (req.path.startsWith('/api/search')) _telemetry.searchQueries++;
+  if (_telemetry.traces.length >= 100) _telemetry.traces.shift();
+  _telemetry.traces.push({ ts: Date.now(), method: req.method, path: req.path });
+  next();
+});
+
 /* ── Health ── */
 app.get('/api/health', (_req, res) => {
   res.json({
@@ -615,6 +636,19 @@ app.delete('/api/workspaces/:id', fsLimiter, (req, res) => {
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.cache', 'coverage', '__pycache__']);
 const SEARCH_MAX_FILE_BYTES = 1024 * 1024; // 1 MB
 
+/**
+ * Lightweight ReDoS safety check: rejects patterns containing nested
+ * quantifiers on groups/character-classes (e.g. `(a+)+`, `([ab]+)*`).
+ * Returns true if the pattern appears safe to compile and run.
+ */
+function isSafeRegex(pattern) {
+  // Reject patterns with nested quantifiers — the primary ReDoS source
+  if (/(\(.*\+.*\)|\(.*\*.*\)|\[.*\+.*\]|\[.*\*.*\])[\+\*]/.test(pattern)) return false;
+  // Reject excessively long patterns
+  if (pattern.length > 200) return false;
+  return true;
+}
+
 /** Search file contents recursively within APEX_ROOT */
 function searchFiles(dir, query, opts, results, depth) {
   if (depth > 6 || results.length >= 200) return;
@@ -635,7 +669,12 @@ function searchFiles(dir, query, opts, results, depth) {
 
       let re = null;
       if (opts.regex) {
-        try { re = new RegExp(query, opts.matchCase ? 'g' : 'gi'); } catch (_) { continue; }
+        // Reject patterns with ReDoS-prone constructs before compiling
+        if (isSafeRegex(query)) {
+          try { re = new RegExp(query, opts.matchCase ? 'g' : 'gi'); } catch (_) { continue; }
+        } else {
+          continue; // skip file rather than risk catastrophic backtracking
+        }
       }
 
       const lines = content.split('\n');
@@ -663,6 +702,10 @@ app.get('/api/search', fsLimiter, (req, res) => {
   try {
     const { q, regex, matchCase } = req.query;
     if (!q || !q.trim()) return res.status(400).json({ error: 'query required' });
+    if (regex === '1') {
+      if (!isSafeRegex(q.trim())) return res.status(400).json({ error: 'Regex pattern is too complex or potentially unsafe (ReDoS risk). Simplify the pattern.' });
+      try { new RegExp(q.trim()); } catch (e) { return res.status(400).json({ error: `Invalid regex: ${e.message}` }); }
+    }
     const opts = { regex: regex === '1', matchCase: matchCase === '1' };
     const results = [];
     searchFiles(APEX_ROOT, q.trim(), opts, results, 0);
@@ -792,12 +835,23 @@ app.post('/api/ai/tasks', execLimiter, async (req, res) => {
         }, { model: usedModel, messages: [{ role: 'system', content: systemPrompt }, ...messages], max_tokens: 4096 });
       }
 
-      task.status = 'done';
-      task.completed_at = Date.now();
-      task.duration_ms = task.completed_at - task.created_at;
-      task.result = proxyResult.body;
-      AI_TASKS.set(taskId, task);
-      res.status(proxyResult.status).json({ task_id: taskId, task_type, status: 'done', result: proxyResult.body });
+      // Treat non-2xx HTTP responses from the LLM provider as task errors
+      const httpOk = proxyResult.status >= 200 && proxyResult.status < 300;
+      if (!httpOk) {
+        task.status = 'error';
+        task.completed_at = Date.now();
+        task.duration_ms = task.completed_at - task.created_at;
+        task.error = `LLM provider returned HTTP ${proxyResult.status}`;
+        AI_TASKS.set(taskId, task);
+        res.status(proxyResult.status).json({ task_id: taskId, task_type, status: 'error', error: task.error, result: proxyResult.body });
+      } else {
+        task.status = 'done';
+        task.completed_at = Date.now();
+        task.duration_ms = task.completed_at - task.created_at;
+        task.result = proxyResult.body;
+        AI_TASKS.set(taskId, task);
+        res.status(proxyResult.status).json({ task_id: taskId, task_type, status: 'done', result: proxyResult.body });
+      }
     } catch (llmErr) {
       task.status = 'error';
       task.error = llmErr.message;
@@ -813,26 +867,6 @@ app.get('/api/ai/tasks/:id', fsLimiter, (req, res) => {
   const task = AI_TASKS.get(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
   res.json(task);
-});
-
-/* ── Workspace Telemetry & Metrics ── */
-const _telemetry = {
-  startTime:     Date.now(),
-  fileOps:       0,
-  execOps:       0,
-  llmRequests:   0,
-  searchQueries: 0,
-  traces:        [],  // ring buffer, max 100
-};
-
-app.use((req, _res, next) => {
-  if (req.path.startsWith('/api/files'))  _telemetry.fileOps++;
-  if (req.path.startsWith('/api/exec'))   _telemetry.execOps++;
-  if (req.path.startsWith('/api/llm'))    _telemetry.llmRequests++;
-  if (req.path.startsWith('/api/search')) _telemetry.searchQueries++;
-  if (_telemetry.traces.length >= 100) _telemetry.traces.shift();
-  _telemetry.traces.push({ ts: Date.now(), method: req.method, path: req.path });
-  next();
 });
 
 app.get('/api/metrics', fsLimiter, (_req, res) => {
