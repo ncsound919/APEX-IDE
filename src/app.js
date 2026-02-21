@@ -1375,7 +1375,7 @@ function parseBuildPlanText(text) {
       const match = line.match(pattern);
       if (match) {
         const t = match[1].trim();
-        if (t.length > 0 && t.length < LOGIC_MAX_STEP_LENGTH) steps.push(t);
+        if (t.length > 0 && t.length <= LOGIC_MAX_STEP_LENGTH) steps.push(t);
         break;
       }
     }
