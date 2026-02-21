@@ -854,6 +854,139 @@ kbd {
 .mcp-tool-name { font-size: 12px; font-weight: 600; font-family: var(--font-code); color: var(--accent-cyan); }
 .mcp-tool-desc { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
 
+/* ══ LOGIC MODE PANEL ════════════════════════════════════════════════ */
+.logic-mode-panel {
+  display: flex; flex-direction: column; height: 100%; overflow: hidden;
+}
+.logic-progress-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.logic-progress-bar-wrap {
+  flex: 1; height: 4px; background: var(--bg-tertiary); border-radius: 2px; overflow: hidden;
+}
+.logic-progress-bar {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--accent-purple), var(--accent-gold));
+  border-radius: 2px; transition: width .4s ease;
+}
+.logic-step-count {
+  font-size: 11px; color: var(--text-muted); font-family: var(--font-code); white-space: nowrap;
+}
+.logic-step-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+.logic-empty {
+  padding: 20px 12px; font-size: 12px; color: var(--text-muted);
+  font-style: italic; text-align: center;
+}
+.logic-step {
+  display: flex; align-items: flex-start; gap: 6px;
+  padding: 7px 10px; border-bottom: 1px solid var(--border);
+  border-left: 2px solid transparent; transition: background .15s;
+}
+.logic-step:hover { background: var(--bg-hover); }
+.logic-step-pending { border-left-color: var(--text-muted); }
+.logic-step-active  { border-left-color: var(--accent-cyan); background: rgba(0,229,255,.04); }
+.logic-step-done    { border-left-color: var(--accent-green); opacity: .65; }
+.logic-step-skipped { border-left-color: var(--accent-amber); opacity: .45; }
+.logic-step-num {
+  font-size: 10px; font-family: var(--font-code); color: var(--text-muted);
+  min-width: 16px; text-align: right; flex-shrink: 0; padding-top: 2px;
+}
+.logic-step-icon {
+  font-size: 14px; flex-shrink: 0; cursor: pointer; line-height: 1;
+  background: none; border: none; padding: 0; transition: transform .15s;
+}
+.logic-step-icon:hover { transform: scale(1.3); }
+.logic-step-text {
+  flex: 1; font-size: 12px; line-height: 1.5;
+  color: var(--text-primary); word-break: break-word;
+}
+.logic-step-done .logic-step-text { text-decoration: line-through; color: var(--text-muted); }
+.logic-step-delete {
+  font-size: 11px; color: var(--text-muted); flex-shrink: 0;
+  opacity: 0; transition: opacity .15s; padding: 0 2px;
+  background: none; border: none; cursor: pointer;
+}
+.logic-step:hover .logic-step-delete { opacity: 1; }
+.logic-step:focus-within .logic-step-delete { opacity: 1; }
+.logic-step-delete:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent-pink);
+  outline-offset: 2px;
+}
+.logic-step-delete:hover { color: var(--accent-pink); }
+.logic-add-form {
+  padding: 8px 10px; border-top: 1px solid var(--border); flex-shrink: 0;
+}
+.logic-add-row { display: flex; gap: 6px; margin-top: 6px; }
+.logic-step-input {
+  flex: 1; font-size: 12px; background: var(--bg-tertiary);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 6px 10px; color: var(--text-primary);
+}
+.logic-step-input:focus { border-color: var(--accent-purple); outline: none; }
+.logic-add-btn {
+  padding: 6px 12px; background: var(--accent-purple); color: #fff;
+  border-radius: var(--radius-sm); font-weight: 700; font-size: 16px;
+  border: none; cursor: pointer; transition: opacity .15s;
+}
+.logic-add-btn:hover { opacity: .85; }
+
+/* Logic Mode Import Modal */
+.logic-import-modal {
+  position: fixed; inset: 0; z-index: 8000;
+}
+.logic-import-overlay {
+  position: absolute; inset: 0; background: rgba(0,0,0,.6);
+}
+.logic-import-content {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  width: 520px; max-width: 95vw; max-height: 90vh;
+  background: var(--bg-secondary); border: 1px solid var(--border-bright);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.logic-import-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; font-size: 13px; font-weight: 700; letter-spacing: 1px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(90deg, rgba(155,89,255,.15), transparent);
+}
+.logic-import-hint {
+  padding: 10px 16px 6px; font-size: 12px; color: var(--text-secondary); line-height: 1.5;
+}
+.logic-import-textarea {
+  margin: 0 16px; font-family: var(--font-code); font-size: 12px; resize: vertical;
+  min-height: 160px; background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 8px 10px; color: var(--text-primary);
+}
+.logic-import-textarea:focus { border-color: var(--accent-purple); outline: none; }
+.logic-import-footer {
+  display: flex; gap: 8px; justify-content: flex-end;
+  padding: 12px 16px; border-top: 1px solid var(--border);
+}
+
+/* Build-plan detection banner in AI Chat */
+.logic-import-banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; margin: 6px 0;
+  background: rgba(155,89,255,.12); border: 1px solid var(--accent-purple);
+  border-radius: var(--radius-sm);
+}
+.logic-banner-icon { font-size: 16px; flex-shrink: 0; }
+.logic-banner-text { flex: 1; font-size: 12px; color: var(--text-primary); }
+.logic-banner-btn {
+  font-size: 11px; padding: 4px 10px; font-weight: 700; border: none; cursor: pointer;
+  background: var(--accent-purple); color: #fff;
+  border-radius: var(--radius-sm); transition: opacity .15s;
+}
+.logic-banner-btn:hover { opacity: .85; }
+.logic-banner-dismiss {
+  font-size: 12px; color: var(--text-muted); padding: 2px 4px;
+  background: none; border: none; cursor: pointer; transition: color .15s;
+}
+.logic-banner-dismiss:hover { color: var(--accent-pink); }
+
 /* ══ FRONTEND VISUALIZER PANE ════════════════════════════════════════ */
 .editor-pane#pane-visualizer { display: none; flex-direction: column; }
 .editor-pane#pane-visualizer.active { display: flex; }

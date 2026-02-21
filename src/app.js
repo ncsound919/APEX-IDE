@@ -44,6 +44,9 @@ const ApexState = {
   // Chat state
   chatHistory: [],          // [{role:'user'|'assistant', content:'…'}]
   chatLoading: false,
+  // Logic Mode state
+  logicPlan: [],            // [{id, text, status:'pending'|'active'|'done'|'skipped'}]
+  logicPlanNextId: 1,
 };
 
 /* ─── Sample File Tree ───────────────────────────────────────────── */
@@ -99,6 +102,9 @@ const COMMANDS = [
   { icon: '🔢', label: 'Go to Line',              shortcut: 'Ctrl+G',        fn: () => goToLine()            },
   { icon: '🗺️', label: 'Toggle Minimap',           shortcut: '',              fn: () => toggleMinimap()       },
   { icon: '🗑️', label: 'Clear Chat',              shortcut: '',              fn: () => clearChat()           },
+  { icon: '🧩', label: 'Open Logic Mode',          shortcut: 'Ctrl+Shift+L',  fn: () => switchActivity('logic-mode') },
+  { icon: '📋', label: 'Logic: Import Build Plan', shortcut: '',              fn: () => importBuildPlan()     },
+  { icon: '🗑️', label: 'Logic: Clear All Steps',  shortcut: '',              fn: () => clearLogicPlan()      },
   { icon: '🎵', label: 'Open Music Player',        shortcut: 'Ctrl+M',        fn: () => switchActivity('music-player') },
   { icon: '🔀', label: 'Music: Shuffle',           shortcut: '',              fn: () => mpToggleShuffle()     },
   { icon: '⏭',  label: 'Music: Next Track',        shortcut: '',              fn: () => mpNext()              },
@@ -201,6 +207,7 @@ function initApp() {
   log(`[INFO] Project: ${ApexState.projectName || '(unnamed)'}`);
   renderMCPServers();
   renderCLIInstances();
+  renderLogicPlan();
 }
 
 /* ─── Load Monaco ─────────────────────────────────────────────────── */
@@ -1263,6 +1270,224 @@ function invokeMCPTool(tool) {
     search_files:    '[MCP] search_files → Enter query in terminal: mcp search <query>',
   };
   setTimeout(() => termPrint('output', msgs[tool] || `[MCP] ${tool} ready`), 300);
+}
+
+/* ═══════════════ LOGIC MODE ═════════════════════════════════════════ */
+
+let _pendingBuildPlanText = null;
+
+const LOGIC_STATUS_ICONS = { pending: '⬜', active: '🔵', done: '✅', skipped: '⏭️' };
+const LOGIC_STATUS_CYCLE  = { pending: 'active', active: 'done', done: 'pending', skipped: 'pending' };
+const LOGIC_MAX_STEP_LENGTH    = 300; // max characters for a single auto-imported step description
+const LOGIC_MIN_PLAN_STEPS     = 3;  // min steps to trigger the auto-import banner
+
+function renderLogicPlan() {
+  const list     = document.getElementById('logic-step-list');
+  const countEl  = document.getElementById('logic-step-count');
+  const progress = document.getElementById('logic-progress-bar');
+  if (!list) return;
+
+  const plan  = ApexState.logicPlan;
+  const done  = plan.filter(s => s.status === 'done').length;
+  const total = plan.length;
+
+  if (countEl)  countEl.textContent = `${done}/${total} steps`;
+  if (progress) progress.style.width = total ? `${(done / total) * 100}%` : '0%';
+
+  list.innerHTML = '';
+
+  if (!plan.length) {
+    const empty = document.createElement('div');
+    empty.className = 'logic-empty';
+    empty.textContent = 'No steps yet. Add a step or import a build plan.';
+    list.appendChild(empty);
+    return;
+  }
+
+  plan.forEach((step, i) => {
+    const item = document.createElement('div');
+    item.className = `logic-step logic-step-${step.status}`;
+
+    const numEl = document.createElement('span');
+    numEl.className = 'logic-step-num';
+    numEl.textContent = `${i + 1}`;
+
+    const iconBtn = document.createElement('button');
+    iconBtn.className = 'logic-step-icon';
+    iconBtn.textContent = LOGIC_STATUS_ICONS[step.status] || '⬜';
+    iconBtn.title = 'Click to cycle status (pending → active → done)';
+    iconBtn.addEventListener('click', () => cycleLogicStepStatus(i));
+
+    const textEl = document.createElement('span');
+    textEl.className = 'logic-step-text';
+    textEl.textContent = step.text;
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'logic-step-delete';
+    delBtn.textContent = '✕';
+    delBtn.title = 'Remove step';
+    delBtn.addEventListener('click', () => deleteLogicStep(i));
+
+    item.appendChild(numEl);
+    item.appendChild(iconBtn);
+    item.appendChild(textEl);
+    item.appendChild(delBtn);
+    list.appendChild(item);
+  });
+}
+
+function cycleLogicStepStatus(idx) {
+  const step = ApexState.logicPlan[idx];
+  if (!step) return;
+  step.status = LOGIC_STATUS_CYCLE[step.status] || 'pending';
+  renderLogicPlan();
+  termPrint('output', `[Logic] Step ${idx + 1} → ${step.status.toUpperCase()}: ${step.text}`);
+}
+
+function deleteLogicStep(idx) {
+  ApexState.logicPlan.splice(idx, 1);
+  renderLogicPlan();
+}
+
+function addLogicStep() {
+  const input = document.getElementById('logic-step-input');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) { termPrint('warn', '[Logic] Please enter a step description.'); return; }
+  ApexState.logicPlan.push({ id: ApexState.logicPlanNextId++, text, status: 'pending' });
+  input.value = '';
+  renderLogicPlan();
+  termPrint('output', `[Logic] Step added: ${text}`);
+}
+
+function clearLogicPlan() {
+  if (!ApexState.logicPlan.length) return;
+  if (!confirm('Clear all logic steps?')) return;
+  ApexState.logicPlan = [];
+  renderLogicPlan();
+  termPrint('output', '[Logic] Plan cleared');
+}
+
+function parseBuildPlanText(text) {
+  const lines = text.split('\n');
+  const steps = [];
+  const patterns = [
+    /^\s*\d+[\.\)]\s+(.+)/,       // 1. Step  or  1) Step
+    /^\s*[-*•]\s+(.+)/,           // - Step  or  * Step
+    /^\s*step\s+\d+[:\s]+(.+)/i, // Step 1: text
+    /^\s*\[[ xX-]\]\s+(.+)/,     // [ ] Step  or  [x]/[X] Step
+  ];
+  lines.forEach(line => {
+    for (const pattern of patterns) {
+      const match = line.match(pattern);
+      if (match) {
+        const t = match[1].trim();
+        if (t.length > 0 && t.length <= LOGIC_MAX_STEP_LENGTH) steps.push(t);
+        break;
+      }
+    }
+  });
+  return steps;
+}
+
+function importBuildPlan() {
+  const modal = document.getElementById('logic-import-modal');
+  if (modal) modal.classList.remove('hidden');
+  const textarea = document.getElementById('logic-import-text');
+  if (textarea) textarea.focus();
+}
+
+function closeImportModal() {
+  const modal = document.getElementById('logic-import-modal');
+  if (modal) modal.classList.add('hidden');
+  const textarea = document.getElementById('logic-import-text');
+  if (textarea) textarea.value = '';
+}
+
+function confirmImportBuildPlan() {
+  const textarea = document.getElementById('logic-import-text');
+  if (!textarea) return;
+  const text = textarea.value.trim();
+  if (!text) { termPrint('warn', '[Logic] No plan text to import.'); return; }
+  const steps = parseBuildPlanText(text);
+  if (steps.length === 0) {
+    termPrint('warn', '[Logic] No steps found. Use numbered list (1. Step) or bullets (- Step).');
+    return;
+  }
+  steps.forEach(stepText => {
+    ApexState.logicPlan.push({ id: ApexState.logicPlanNextId++, text: stepText, status: 'pending' });
+  });
+  closeImportModal();
+  switchActivity('logic-mode');
+  renderLogicPlan();
+  termPrint('output', `[Logic] Imported ${steps.length} steps from build plan ✓`);
+}
+
+function maybeOfferBuildPlanImport(text) {
+  const steps = parseBuildPlanText(text);
+  if (steps.length >= LOGIC_MIN_PLAN_STEPS) {
+    _pendingBuildPlanText = text;
+    showBuildPlanBanner(steps.length);
+  } else {
+    // Clear any stale pending build plan and banner when no valid plan is detected
+    _pendingBuildPlanText = '';
+    const existing = document.getElementById('logic-import-banner');
+    if (existing) existing.remove();
+  }
+}
+
+function showBuildPlanBanner(count) {
+  const existing = document.getElementById('logic-import-banner');
+  if (existing) existing.remove();
+
+  const banner = document.createElement('div');
+  banner.id = 'logic-import-banner';
+  banner.className = 'logic-import-banner fade-in';
+
+  const icon = document.createElement('span');
+  icon.className = 'logic-banner-icon';
+  icon.textContent = '🧩';
+
+  const textEl = document.createElement('span');
+  textEl.className = 'logic-banner-text';
+  textEl.textContent = `Build plan detected (${count} steps) — import to Logic Mode?`;
+
+  const importBtn = document.createElement('button');
+  importBtn.className = 'logic-banner-btn';
+  importBtn.textContent = 'Import';
+  importBtn.addEventListener('click', importBuildPlanFromPending);
+
+  const dismissBtn = document.createElement('button');
+  dismissBtn.className = 'logic-banner-dismiss';
+  dismissBtn.textContent = '✕';
+  dismissBtn.addEventListener('click', () => banner.remove());
+
+  banner.appendChild(icon);
+  banner.appendChild(textEl);
+  banner.appendChild(importBtn);
+  banner.appendChild(dismissBtn);
+
+  const chatMessages = document.getElementById('chat-messages');
+  if (chatMessages) {
+    chatMessages.appendChild(banner);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+}
+
+function importBuildPlanFromPending() {
+  const text = _pendingBuildPlanText;
+  _pendingBuildPlanText = null;
+  const banner = document.getElementById('logic-import-banner');
+  if (banner) banner.remove();
+  if (!text) return;
+  const steps = parseBuildPlanText(text);
+  if (steps.length === 0) { termPrint('warn', '[Logic] No steps found in detected plan.'); return; }
+  steps.forEach(stepText => {
+    ApexState.logicPlan.push({ id: ApexState.logicPlanNextId++, text: stepText, status: 'pending' });
+  });
+  switchActivity('logic-mode');
+  renderLogicPlan();
+  termPrint('output', `[Logic] Imported ${steps.length} steps from build plan ✓`);
 }
 
 /* ─── Frontend Visualizer ─────────────────────────────────────────── */
@@ -2339,6 +2564,7 @@ document.addEventListener('keydown', e => {
   if (ctrl && e.shiftKey && e.key === 'G') { e.preventDefault(); switchActivity('git'); return; }
   if (ctrl && e.shiftKey && e.key === 'C') { e.preventDefault(); switchActivity('cli'); return; }
   if (ctrl && e.shiftKey && e.key === 'M') { e.preventDefault(); switchActivity('mcp'); return; }
+  if (ctrl && e.shiftKey && e.key === 'L') { e.preventDefault(); switchActivity('logic-mode'); return; }
   if (ctrl && e.altKey && !e.shiftKey && e.key.toLowerCase() === 'v') { e.preventDefault(); openVisualizerTab(); return; }
   if (ctrl && e.shiftKey && e.key === 'J') { e.preventDefault(); switchActivity('chat'); return; }
   if (ctrl && e.key === 'm' && !e.shiftKey) { e.preventDefault(); switchActivity('music-player'); return; }
