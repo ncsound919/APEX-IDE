@@ -1271,7 +1271,7 @@ let _pendingBuildPlanText = null;
 
 const LOGIC_STATUS_ICONS = { pending: '⬜', active: '🔵', done: '✅', skipped: '⏭️' };
 const LOGIC_STATUS_CYCLE  = { pending: 'active', active: 'done', done: 'pending', skipped: 'pending' };
-const LOGIC_MAX_STEP_LENGTH    = 300; // max characters for a single step description
+const LOGIC_MAX_STEP_LENGTH    = 300; // max characters for a single auto-imported step description
 const LOGIC_MIN_PLAN_STEPS     = 3;  // min steps to trigger the auto-import banner
 
 function renderLogicPlan() {
