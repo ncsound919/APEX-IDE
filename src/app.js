@@ -896,7 +896,7 @@ function populateSettingsKeys() {
     if (el && val) el.value = val;
   });
   renderSettingsComponents();
-  loadDeepCustomizationJSON();
+  if (window.loadDeepCustomizationJSON) window.loadDeepCustomizationJSON();
 }
 
 /* ─── Project Theme ───────────────────────────────────────────────── */
