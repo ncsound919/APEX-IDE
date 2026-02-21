@@ -77,14 +77,44 @@ function runGit(args, cwd) {
   });
 }
 
+/** Build a sanitized environment for child processes, filtering out
+ *  variables that look like they may contain secrets.
+ */
+function buildSafeEnv(baseEnv) {
+  const safeEnv = { ...baseEnv };
+  const sensitivePatterns = [
+    /key/i,
+    /secret/i,
+    /token/i,
+    /password/i,
+    /passwd/i,
+    /pwd/i,
+    /credential/i,
+    /^AWS_/i,
+    /^GCP_/i,
+    /^AZURE_/i,
+  ];
+
+  for (const name of Object.keys(safeEnv)) {
+    if (sensitivePatterns.some(re => re.test(name))) {
+      delete safeEnv[name];
+    }
+  }
+
+  // Preserve existing behavior of disabling color in child processes.
+  safeEnv.FORCE_COLOR = '0';
+  return safeEnv;
+}
+
 /** Execute an arbitrary shell command and collect output. */
 function runExec(cmd, cwd, timeout) {
   return new Promise((resolve, reject) => {
     const shell  = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
     const flag   = process.platform === 'win32' ? '/c' : '-c';
+    const env    = buildSafeEnv(process.env);
     const proc   = spawn(shell, [flag, cmd], {
       cwd: cwd || APEX_ROOT,
-      env: { ...process.env, FORCE_COLOR: '0' },
+      env,
     });
 
     let out = '', err = '';
