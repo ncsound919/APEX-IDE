@@ -137,7 +137,7 @@
         <button class="activity-btn" data-panel="domains" onclick="switchActivity('domains',this)" title="Domain Adapters">🎛️</button>
         <button class="activity-btn" data-panel="cli" onclick="switchActivity('cli',this)" title="CLI Runner">💻</button>
         <button class="activity-btn" data-panel="mcp" onclick="switchActivity('mcp',this)" title="MCP Servers">🔌</button>
-        <button class="activity-btn" data-panel="logic-mode" onclick="switchActivity('logic-mode',this)" title="Logic Mode">🧩</button>
+        <button class="activity-btn" data-panel="music-player" onclick="switchActivity('music-player',this)" title="Music Player">🎵</button>
         <div class="activity-spacer"></div>
         <button class="activity-btn" data-panel="settings" onclick="switchActivity('settings',this)" title="Settings">⚙️</button>
       </aside>
@@ -604,11 +604,148 @@
               </label>
             </div>
             <div class="settings-section">
+              <div class="section-label">AUTO-SAVE</div>
+              <label class="toggle-row">
+                <span>Enable Auto-Save</span>
+                <input type="checkbox" class="toggle-switch" id="settings-autosave" onchange="toggleAutoSave(this.checked)" checked />
+              </label>
+              <label class="settings-row">
+                <span>Delay (ms)</span>
+                <input type="number" id="settings-autosave-delay" value="1000" min="500" max="10000" step="500" onchange="setAutoSaveDelay(this.value)" />
+              </label>
+            </div>
+            <div class="settings-section">
+              <div class="section-label">FOCUS &amp; WELLNESS</div>
+              <label class="toggle-row">
+                <span>Zen / Focus Mode</span>
+                <input type="checkbox" class="toggle-switch" id="settings-zen" onchange="toggleZenMode(this.checked)" />
+              </label>
+              <label class="toggle-row">
+                <span>Pomodoro Timer</span>
+                <input type="checkbox" class="toggle-switch" id="settings-pomodoro" onchange="togglePomodoro(this.checked)" />
+              </label>
+              <label class="settings-row">
+                <span>Work Interval (min)</span>
+                <input type="number" id="settings-pomodoro-work" value="25" min="5" max="90" />
+              </label>
+              <label class="settings-row">
+                <span>Break Interval (min)</span>
+                <input type="number" id="settings-pomodoro-break" value="5" min="1" max="30" />
+              </label>
+              <div class="pomodoro-status" id="pomodoro-status" style="display:none">
+                <span class="pomodoro-phase" id="pomodoro-phase">🍅 Work</span>
+                <span class="pomodoro-clock" id="pomodoro-clock">25:00</span>
+                <button class="btn-secondary" onclick="resetPomodoro()">Reset</button>
+              </div>
+            </div>
+            <div class="settings-section">
+              <div class="section-label">NOTIFICATIONS</div>
+              <label class="toggle-row">
+                <span>Desktop Notifications</span>
+                <input type="checkbox" class="toggle-switch" id="settings-notifs" onchange="toggleNotifications(this.checked)" />
+              </label>
+              <label class="toggle-row">
+                <span>Sound Effects</span>
+                <input type="checkbox" class="toggle-switch" id="settings-sounds" onchange="toggleSounds(this.checked)" checked />
+              </label>
+              <label class="toggle-row">
+                <span>AI Response Chime</span>
+                <input type="checkbox" class="toggle-switch" id="settings-ai-chime" onchange="toggleAIChime(this.checked)" checked />
+              </label>
+            </div>
+            <div class="settings-section">
+              <div class="section-label">SESSION</div>
+              <div class="session-info-grid">
+                <div class="session-info-item"><span class="session-info-label">Session Start</span><span class="session-info-val" id="si-start">—</span></div>
+                <div class="session-info-item"><span class="session-info-label">Duration</span><span class="session-info-val" id="si-duration">0m</span></div>
+                <div class="session-info-item"><span class="session-info-label">Lines Written</span><span class="session-info-val" id="si-lines">0</span></div>
+                <div class="session-info-item"><span class="session-info-label">Saves</span><span class="session-info-val" id="si-saves">0</span></div>
+              </div>
+              <button class="btn-secondary" style="margin-top:8px;width:100%" onclick="resetSession()">Reset Session Stats</button>
+            </div>
+            <div class="settings-section">
+              <div class="section-label">KEYBOARD SHORTCUTS</div>
+              <div class="shortcuts-ref">
+                <div class="shortcut-ref-row"><kbd>Ctrl+P</kbd><span>Command Palette</span></div>
+                <div class="shortcut-ref-row"><kbd>Ctrl+S</kbd><span>Save File</span></div>
+                <div class="shortcut-ref-row"><kbd>Ctrl+B</kbd><span>Toggle Sidebar</span></div>
+                <div class="shortcut-ref-row"><kbd>Ctrl+`</kbd><span>Toggle Terminal</span></div>
+                <div class="shortcut-ref-row"><kbd>Ctrl+Shift+F</kbd><span>Find in Files</span></div>
+                <div class="shortcut-ref-row"><kbd>Ctrl+Shift+J</kbd><span>AI Chat</span></div>
+                <div class="shortcut-ref-row"><kbd>Ctrl+Shift+C</kbd><span>CLI Runner</span></div>
+                <div class="shortcut-ref-row"><kbd>Ctrl+Alt+V</kbd><span>Visualizer</span></div>
+                <div class="shortcut-ref-row"><kbd>Alt+E</kbd><span>Explain Code</span></div>
+                <div class="shortcut-ref-row"><kbd>Alt+R</kbd><span>Refactor</span></div>
+                <div class="shortcut-ref-row"><kbd>Alt+T</kbd><span>Write Tests</span></div>
+                <div class="shortcut-ref-row"><kbd>Alt+F</kbd><span>Fix Errors</span></div>
+                <div class="shortcut-ref-row"><kbd>Shift+Alt+F</kbd><span>Format Document</span></div>
+                <div class="shortcut-ref-row"><kbd>Ctrl+G</kbd><span>Go to Line</span></div>
+                <div class="shortcut-ref-row"><kbd>Ctrl+M</kbd><span>Music Player</span></div>
+              </div>
+            </div>
+            <div class="settings-section">
               <div class="section-label">UPLOADED COMPONENTS &amp; EXTENSIONS</div>
               <div class="settings-note">Folders uploaded to MCP servers and CLI instances.</div>
               <div id="settings-uploads-list" class="settings-uploads-list">
                 <div class="settings-note">No folders uploaded yet.</div>
               </div>
+            </div>
+            <div class="settings-section">
+              <div class="section-label">DANGER ZONE</div>
+              <button class="btn-danger" onclick="clearAllSettings()">🗑️ Clear All Settings &amp; Reset</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Music Player Panel -->
+        <div class="panel" id="panel-music-player">
+          <div class="panel-header">
+            <span>MUSIC PLAYER 🎵</span>
+            <div class="panel-actions">
+              <button class="icon-btn" title="Upload Folder" onclick="document.getElementById('mp-folder-input').click()">📁</button>
+              <button class="icon-btn" title="New Playlist" onclick="mpCreatePlaylist()">➕</button>
+            </div>
+          </div>
+          <!-- Folder upload (hidden) -->
+          <input type="file" id="mp-folder-input" style="display:none" webkitdirectory multiple accept="audio/*"
+                 onchange="mpLoadFolder(this.files)" />
+
+          <!-- Playlist tabs -->
+          <div class="mp-playlist-bar" id="mp-playlist-bar">
+            <div class="mp-playlist-tab active" data-pl="0" onclick="mpSwitchPlaylist(0, this)">All Tracks</div>
+          </div>
+
+          <!-- Track list -->
+          <div class="mp-track-list" id="mp-track-list">
+            <div class="mp-empty">Upload a music folder to get started 🎵</div>
+          </div>
+
+          <!-- Playback controls -->
+          <div class="mp-controls">
+            <div class="mp-now-playing">
+              <div class="mp-album-art" id="mp-album-art">♪</div>
+              <div class="mp-track-info">
+                <div class="mp-track-title" id="mp-track-title">No track selected</div>
+                <div class="mp-track-artist" id="mp-track-artist">—</div>
+              </div>
+            </div>
+            <div class="mp-progress-row">
+              <span class="mp-time" id="mp-time-cur">0:00</span>
+              <input type="range" class="mp-progress" id="mp-progress" min="0" max="100" value="0"
+                     oninput="mpSeek(this.value)" />
+              <span class="mp-time" id="mp-time-dur">0:00</span>
+            </div>
+            <div class="mp-btn-row">
+              <button class="mp-btn" id="mp-shuffle-btn" onclick="mpToggleShuffle()" title="Shuffle">🔀</button>
+              <button class="mp-btn" onclick="mpPrev()" title="Previous">⏮</button>
+              <button class="mp-btn mp-play" id="mp-play-btn" onclick="mpTogglePlay()" title="Play/Pause">▶</button>
+              <button class="mp-btn" onclick="mpNext()" title="Next">⏭</button>
+              <button class="mp-btn" id="mp-repeat-btn" onclick="mpCycleRepeat()" title="Repeat">🔁</button>
+            </div>
+            <div class="mp-volume-row">
+              <span class="mp-vol-icon" onclick="mpToggleMute()">🔊</span>
+              <input type="range" class="mp-volume" id="mp-volume" min="0" max="100" value="80"
+                     oninput="mpSetVolume(this.value)" />
             </div>
           </div>
         </div>
@@ -914,6 +1051,29 @@
           </div>
         </div>
       </aside>
+    </div>
+
+    <!-- MINI MUSIC PLAYER BAR -->
+    <div class="mp-mini-bar hidden" id="mp-mini-bar">
+      <div class="mp-mini-left">
+        <span class="mp-mini-art">♪</span>
+        <div class="mp-mini-info">
+          <span class="mp-mini-title" id="mp-mini-title">No track</span>
+          <span class="mp-mini-artist" id="mp-mini-artist">—</span>
+        </div>
+      </div>
+      <div class="mp-mini-center">
+        <button class="mp-mini-btn" onclick="mpPrev()" title="Prev">⏮</button>
+        <button class="mp-mini-btn mp-mini-play" id="mp-mini-play" onclick="mpTogglePlay()" title="Play/Pause">▶</button>
+        <button class="mp-mini-btn" onclick="mpNext()" title="Next">⏭</button>
+        <div class="mp-mini-progress-wrap">
+          <div class="mp-mini-progress-fill" id="mp-mini-progress-fill"></div>
+        </div>
+      </div>
+      <div class="mp-mini-right">
+        <span class="mp-mini-time" id="mp-mini-time">0:00 / 0:00</span>
+        <button class="mp-mini-btn" onclick="switchActivity('music-player')" title="Open Player">⬡</button>
+      </div>
     </div>
 
     <!-- BOTTOM PANEL (Terminal) -->

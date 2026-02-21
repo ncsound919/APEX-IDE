@@ -105,6 +105,13 @@ const COMMANDS = [
   { icon: '🧩', label: 'Open Logic Mode',          shortcut: 'Ctrl+Shift+L',  fn: () => switchActivity('logic-mode') },
   { icon: '📋', label: 'Logic: Import Build Plan', shortcut: '',              fn: () => importBuildPlan()     },
   { icon: '🗑️', label: 'Logic: Clear All Steps',  shortcut: '',              fn: () => clearLogicPlan()      },
+  { icon: '🎵', label: 'Open Music Player',        shortcut: 'Ctrl+M',        fn: () => switchActivity('music-player') },
+  { icon: '🔀', label: 'Music: Shuffle',           shortcut: '',              fn: () => mpToggleShuffle()     },
+  { icon: '⏭',  label: 'Music: Next Track',        shortcut: '',              fn: () => mpNext()              },
+  { icon: '⏮',  label: 'Music: Previous Track',    shortcut: '',              fn: () => mpPrev()              },
+  { icon: '▶',  label: 'Music: Play / Pause',      shortcut: '',              fn: () => mpTogglePlay()        },
+  { icon: '🍅', label: 'Toggle Pomodoro Timer',    shortcut: '',              fn: () => { const cb = document.getElementById('settings-pomodoro'); if (cb) { cb.checked = !cb.checked; togglePomodoro(cb.checked); } switchActivity('settings'); } },
+  { icon: '🧘', label: 'Toggle Zen Mode',          shortcut: '',              fn: () => { const cb = document.getElementById('settings-zen'); if (cb) { cb.checked = !cb.checked; toggleZenMode(cb.checked); } } },
 ];
 
 /* ─── File Icons ─────────────────────────────────────────────────── */
@@ -1568,7 +1575,6 @@ function previewHTML() {
   document.getElementById('visualizer-url').placeholder = '(HTML preview active)';
   termPrint('output', '[Visualizer] Previewing HTML snippet');
 }
-
 // Alias used by the welcome tab onclick
 function openTab(id) { activateTab(id); }
 
@@ -1704,7 +1710,7 @@ function sendChatMessage(overrideContent) {
       renderChatBubble('assistant', reply);
       ApexState.chatHistory.push({ role: 'assistant', content: reply });
       saveChatHistory();
-      maybeOfferBuildPlanImport(reply);
+      playChime();
     })
     .catch(err => {
       loadingEl.remove();
@@ -1965,6 +1971,587 @@ function explainError() {
   sendChatMessage(`Explain these errors and how to fix them:\n${errorList}`);
 }
 
+/* ═══════════════ MUSIC PLAYER ═══════════════════════════════════════ */
+(function () {
+  /* ── State ── */
+  const MP = ApexState.musicPlayer = {
+    audio:       new Audio(),
+    tracks:      [],         // { name, artist, url, file }
+    playlists:   [{ name: 'All Tracks', indices: [] }],  // indices into tracks[]
+    activePl:    0,
+    currentIdx:  -1,
+    playing:     false,
+    shuffle:     false,
+    repeat:      'none',     // 'none' | 'one' | 'all'
+    muted:       false,
+    volume:      0.8,
+    _shuffleBag: [],
+    _sessionStarted: false,
+  };
+
+  MP.audio.volume = MP.volume;
+
+  /* ── Helpers ── */
+  function fmtTime(s) {
+    if (isNaN(s) || !isFinite(s)) return '0:00';
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  }
+
+  function currentQueue() {
+    const pl = MP.playlists[MP.activePl];
+    if (!pl) return [];
+    if (MP.activePl === 0) return MP.tracks.map((_, i) => i);
+    return pl.indices;
+  }
+
+  function updateMiniBar() {
+    const bar = document.getElementById('mp-mini-bar');
+    if (!bar) return;
+    if (MP.tracks.length === 0) { bar.classList.add('hidden'); return; }
+    bar.classList.remove('hidden');
+    const track = MP.tracks[MP.currentIdx];
+    const titleEl = document.getElementById('mp-mini-title');
+    const artistEl = document.getElementById('mp-mini-artist');
+    const timeEl = document.getElementById('mp-mini-time');
+    const fillEl = document.getElementById('mp-mini-progress-fill');
+    const playBtn = document.getElementById('mp-mini-play');
+    if (titleEl) titleEl.textContent = track ? track.name : 'No track';
+    if (artistEl) artistEl.textContent = track ? (track.artist || '—') : '—';
+    if (timeEl && MP.audio.duration) {
+      timeEl.textContent = `${fmtTime(MP.audio.currentTime)} / ${fmtTime(MP.audio.duration)}`;
+    }
+    if (fillEl && MP.audio.duration) {
+      fillEl.style.width = ((MP.audio.currentTime / MP.audio.duration) * 100) + '%';
+    }
+    if (playBtn) playBtn.textContent = MP.playing ? '⏸' : '▶';
+  }
+
+  function updatePlayerUI() {
+    const track = MP.tracks[MP.currentIdx];
+    const titleEl  = document.getElementById('mp-track-title');
+    const artistEl = document.getElementById('mp-track-artist');
+    const playBtn  = document.getElementById('mp-play-btn');
+    const miniPlay = document.getElementById('mp-mini-play');
+    if (titleEl)  titleEl.textContent  = track ? track.name   : 'No track selected';
+    if (artistEl) artistEl.textContent = track ? (track.artist || '—') : '—';
+    if (playBtn)  playBtn.textContent  = MP.playing ? '⏸' : '▶';
+    if (miniPlay) miniPlay.textContent = MP.playing ? '⏸' : '▶';
+
+    // Highlight active track in list
+    document.querySelectorAll('.mp-track-item').forEach((el, i) => {
+      const queue = currentQueue();
+      const trackIdx = queue[i];
+      el.classList.toggle('active', trackIdx === MP.currentIdx);
+    });
+
+    // Shuffle/repeat button states
+    const shuffleBtn = document.getElementById('mp-shuffle-btn');
+    const repeatBtn  = document.getElementById('mp-repeat-btn');
+    if (shuffleBtn) shuffleBtn.classList.toggle('active', MP.shuffle);
+    if (repeatBtn) {
+      repeatBtn.classList.remove('active');
+      if (MP.repeat !== 'none') repeatBtn.classList.add('active');
+      repeatBtn.title = MP.repeat === 'none' ? 'Repeat: Off' : MP.repeat === 'one' ? 'Repeat: One' : 'Repeat: All';
+      repeatBtn.textContent = MP.repeat === 'one' ? '🔂' : '🔁';
+    }
+    updateMiniBar();
+  }
+
+  /* ── Load Folder ── */
+  window.mpLoadFolder = function (files) {
+    const audioExts = /\.(mp3|ogg|wav|flac|aac|m4a|opus|webm)$/i;
+    const newTracks = [];
+    Array.from(files).forEach(f => {
+      if (!audioExts.test(f.name)) return;
+      const name = f.name.replace(/\.[^.]+$/, '');
+      const artist = (f.webkitRelativePath || '').split('/').slice(-2, -1)[0] || '—';
+      const url = URL.createObjectURL(f);
+      newTracks.push({ name, artist, url, file: f });
+    });
+    if (!newTracks.length) {
+      termPrint('warn', '[Music] No audio files found in that folder');
+      return;
+    }
+    const startIdx = MP.tracks.length;
+    MP.tracks.push(...newTracks);
+    // Add to "All Tracks" (playlist 0) — it auto-shows all tracks
+    // Add indices to any "All Tracks" playlist that explicitly tracks
+    renderTrackList();
+    updateMiniBar();
+    termPrint('output', `[Music] Loaded ${newTracks.length} track(s) from folder`);
+    // Auto-play first track if nothing loaded before
+    if (MP.currentIdx === -1) {
+      mpPlayTrack(startIdx);
+    }
+    renderPlaylistBar();
+  };
+
+  /* ── Render Track List ── */
+  function renderTrackList() {
+    const container = document.getElementById('mp-track-list');
+    if (!container) return;
+    const queue = currentQueue();
+    if (!queue.length) {
+      container.innerHTML = '<div class="mp-empty">No tracks in this playlist</div>';
+      return;
+    }
+    container.innerHTML = '';
+    queue.forEach((trackIdx, i) => {
+      const track = MP.tracks[trackIdx];
+      if (!track) return;
+      const item = document.createElement('div');
+      item.className = 'mp-track-item' + (trackIdx === MP.currentIdx ? ' active' : '');
+      item.dataset.trackIdx = trackIdx;
+      item.innerHTML = `
+        <span class="mp-track-num">${i + 1}</span>
+        <div class="mp-track-item-info">
+          <span class="mp-track-item-name">${escHtml(track.name)}</span>
+          <span class="mp-track-item-artist">${escHtml(track.artist || '—')}</span>
+        </div>
+        <button class="mp-track-remove" title="Remove" onclick="mpRemoveTrack(${trackIdx},event)">✕</button>
+      `;
+      item.addEventListener('click', () => mpPlayTrack(trackIdx));
+      container.appendChild(item);
+    });
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  /* ── Play / Pause ── */
+  window.mpPlayTrack = function (idx) {
+    if (idx < 0 || idx >= MP.tracks.length) return;
+    const track = MP.tracks[idx];
+    if (MP.currentIdx !== idx) {
+      MP.audio.src = track.url;
+      MP.currentIdx = idx;
+    }
+    MP.audio.play().then(() => {
+      MP.playing = true;
+      updatePlayerUI();
+    }).catch(() => {});
+  };
+
+  window.mpTogglePlay = function () {
+    if (!MP.tracks.length) return;
+    if (MP.currentIdx === -1) { mpPlayTrack(0); return; }
+    if (MP.playing) {
+      MP.audio.pause();
+      MP.playing = false;
+    } else {
+      MP.audio.play().then(() => { MP.playing = true; updatePlayerUI(); }).catch(() => {});
+    }
+    updatePlayerUI();
+  };
+
+  window.mpPrev = function () {
+    const queue = currentQueue();
+    if (!queue.length) return;
+    const pos = queue.indexOf(MP.currentIdx);
+    const newPos = pos <= 0 ? queue.length - 1 : pos - 1;
+    mpPlayTrack(queue[newPos]);
+  };
+
+  window.mpNext = function () {
+    const queue = currentQueue();
+    if (!queue.length) return;
+    if (MP.shuffle) {
+      if (!MP._shuffleBag.length) MP._shuffleBag = [...queue].sort(() => Math.random() - 0.5);
+      const next = MP._shuffleBag.pop();
+      mpPlayTrack(next != null ? next : queue[0]);
+      return;
+    }
+    const pos = queue.indexOf(MP.currentIdx);
+    if (MP.repeat === 'all' || pos < queue.length - 1) {
+      mpPlayTrack(queue[(pos + 1) % queue.length]);
+    }
+  };
+
+  /* ── Audio events ── */
+  MP.audio.addEventListener('ended', () => {
+    if (MP.repeat === 'one') {
+      MP.audio.currentTime = 0;
+      MP.audio.play();
+      return;
+    }
+    const queue = currentQueue();
+    const pos = queue.indexOf(MP.currentIdx);
+    if (MP.shuffle) { mpNext(); return; }
+    if (MP.repeat === 'all') { mpPlayTrack(queue[(pos + 1) % queue.length]); return; }
+    if (pos < queue.length - 1) { mpPlayTrack(queue[pos + 1]); }
+    else { MP.playing = false; updatePlayerUI(); }
+  });
+
+  MP.audio.addEventListener('timeupdate', () => {
+    const prog = document.getElementById('mp-progress');
+    const cur  = document.getElementById('mp-time-cur');
+    const dur  = document.getElementById('mp-time-dur');
+    if (MP.audio.duration) {
+      const pct = (MP.audio.currentTime / MP.audio.duration) * 100;
+      if (prog) prog.value = pct;
+      if (cur)  cur.textContent  = fmtTime(MP.audio.currentTime);
+      if (dur)  dur.textContent  = fmtTime(MP.audio.duration);
+    }
+    updateMiniBar();
+  });
+
+  /* ── Controls ── */
+  window.mpSeek = function (val) {
+    if (MP.audio.duration) MP.audio.currentTime = (val / 100) * MP.audio.duration;
+  };
+
+  window.mpSetVolume = function (val) {
+    MP.volume = val / 100;
+    MP.audio.volume = MP.muted ? 0 : MP.volume;
+  };
+
+  window.mpToggleMute = function () {
+    MP.muted = !MP.muted;
+    MP.audio.volume = MP.muted ? 0 : MP.volume;
+    const icon = document.querySelector('.mp-vol-icon');
+    if (icon) icon.textContent = MP.muted ? '🔇' : '🔊';
+  };
+
+  window.mpToggleShuffle = function () {
+    MP.shuffle = !MP.shuffle;
+    MP._shuffleBag = [];
+    updatePlayerUI();
+    termPrint('output', `[Music] Shuffle: ${MP.shuffle ? 'ON' : 'OFF'}`);
+  };
+
+  window.mpCycleRepeat = function () {
+    const modes = ['none', 'all', 'one'];
+    MP.repeat = modes[(modes.indexOf(MP.repeat) + 1) % modes.length];
+    updatePlayerUI();
+    termPrint('output', `[Music] Repeat: ${MP.repeat}`);
+  };
+
+  window.mpRemoveTrack = function (trackIdx, e) {
+    e && e.stopPropagation();
+    if (trackIdx === MP.currentIdx) {
+      MP.audio.pause();
+      MP.playing = false;
+      MP.currentIdx = -1;
+    }
+    URL.revokeObjectURL(MP.tracks[trackIdx].url);
+    MP.tracks.splice(trackIdx, 1);
+    // Rebuild playlists indices
+    MP.playlists.forEach(pl => {
+      pl.indices = pl.indices
+        .filter(i => i !== trackIdx)
+        .map(i => i > trackIdx ? i - 1 : i);
+    });
+    if (MP.currentIdx > trackIdx) MP.currentIdx--;
+    renderTrackList();
+    updatePlayerUI();
+  };
+
+  /* ── Playlists ── */
+  window.mpCreatePlaylist = function () {
+    const name = prompt('Playlist name:');
+    if (!name || !name.trim()) return;
+    MP.playlists.push({ name: name.trim(), indices: [] });
+    renderPlaylistBar();
+    termPrint('output', `[Music] Playlist created: ${name.trim()}`);
+  };
+
+  window.mpSwitchPlaylist = function (idx, btn) {
+    MP.activePl = idx;
+    document.querySelectorAll('.mp-playlist-tab').forEach(t => t.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    renderTrackList();
+  };
+
+  function renderPlaylistBar() {
+    const bar = document.getElementById('mp-playlist-bar');
+    if (!bar) return;
+    bar.innerHTML = '';
+    MP.playlists.forEach((pl, i) => {
+      const tab = document.createElement('div');
+      tab.className = 'mp-playlist-tab' + (i === MP.activePl ? ' active' : '');
+      tab.dataset.pl = i;
+      tab.textContent = pl.name;
+      tab.onclick = () => mpSwitchPlaylist(i, tab);
+      if (i > 0) {
+        const del = document.createElement('span');
+        del.className = 'mp-pl-del';
+        del.textContent = '×';
+        del.title = 'Delete playlist';
+        del.onclick = ev => { ev.stopPropagation(); mpDeletePlaylist(i); };
+        tab.appendChild(del);
+      }
+      bar.appendChild(tab);
+    });
+  }
+
+  window.mpDeletePlaylist = function (idx) {
+    if (idx === 0) return;
+    MP.playlists.splice(idx, 1);
+    // Adjust active playlist index so it continues to refer to the same logical playlist
+    if (MP.activePl === idx) {
+      // If the active playlist was deleted, reset to the base playlist
+      MP.activePl = 0;
+    } else if (MP.activePl > idx) {
+      // If a playlist before the active one was deleted, shift active index left
+      MP.activePl -= 1;
+    }
+    // Ensure active index is within bounds
+    if (MP.activePl >= MP.playlists.length) MP.activePl = 0;
+    renderPlaylistBar();
+    renderTrackList();
+  };
+
+  window.mpAddCurrentToPlaylist = function (plIdx, trackIdx) {
+    const tIdx = trackIdx != null ? trackIdx : MP.currentIdx;
+    if (tIdx === -1) { termPrint('warn', '[Music] No track to add'); return; }
+    const pl = MP.playlists[plIdx];
+    if (!pl || pl.indices.includes(tIdx)) return;
+    pl.indices.push(tIdx);
+    renderTrackList();
+    termPrint('output', `[Music] Added to "${pl.name}"`);
+  };
+
+  /* ── Context-menu: right-click track to add to playlist ── */
+  document.addEventListener('contextmenu', e => {
+    const item = e.target.closest('.mp-track-item');
+    if (!item) return;
+    e.preventDefault();
+    if (MP.playlists.length <= 1) {
+      termPrint('output', '[Music] Create a playlist first (click ➕)');
+      return;
+    }
+    const idx = parseInt(item.dataset.trackIdx) || 0;
+    const userInput = prompt('Add to playlist (enter number):\n' +
+      MP.playlists.slice(1).map((p, i) => `${i + 1}. ${p.name}`).join('\n'));
+    const num = parseInt(userInput);
+    if (!isNaN(num) && num >= 1 && num < MP.playlists.length) {
+      mpAddCurrentToPlaylist(num, idx);
+    }
+  });
+
+  /* ── renderPlaylistBar is now called directly in mpLoadFolder ── */
+}());
+
+/* ═══════════════ ENHANCED SETTINGS ═════════════════════════════════ */
+(function () {
+  /* ── Session Tracking ── */
+  ApexState.session = {
+    startTime: Date.now(),
+    linesWritten: 0,
+    saves: 0,
+  };
+
+  function updateSessionUI() {
+    const dur = Math.floor((Date.now() - ApexState.session.startTime) / 60000);
+    const el = id => document.getElementById(id);
+    const start = new Date(ApexState.session.startTime);
+    if (el('si-start')) el('si-start').textContent = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (el('si-duration')) el('si-duration').textContent = dur < 60 ? `${dur}m` : `${Math.floor(dur / 60)}h ${dur % 60}m`;
+    if (el('si-lines')) el('si-lines').textContent = ApexState.session.linesWritten;
+    if (el('si-saves')) el('si-saves').textContent = ApexState.session.saves;
+  }
+
+  setInterval(updateSessionUI, 15000);
+
+  window.resetSession = function () {
+    ApexState.session = { startTime: Date.now(), linesWritten: 0, saves: 0 };
+    updateSessionUI();
+    termPrint('output', '[Settings] Session stats reset');
+  };
+
+  // Track saves
+  const _origSaveFile = window.saveFile;
+  window.saveFile = function () {
+    ApexState.session.saves++;
+    return _origSaveFile?.apply(this, arguments);
+  };
+
+  /* ── Auto-save ── */
+  let _autoSaveTimer = null;
+  ApexState.settings = ApexState.settings || {};
+  ApexState.settings.autoSave = true;
+  ApexState.settings.autoSaveDelay = 1000;
+
+  window.toggleAutoSave = function (on) {
+    ApexState.settings.autoSave = on;
+    termPrint('output', `[Settings] Auto-save: ${on ? 'ON' : 'OFF'}`);
+  };
+
+  window.setAutoSaveDelay = function (ms) {
+    ApexState.settings.autoSaveDelay = parseInt(ms) || 1000;
+  };
+
+  function scheduleAutoSave() {
+    if (!ApexState.settings.autoSave) return;
+    clearTimeout(_autoSaveTimer);
+    _autoSaveTimer = setTimeout(() => {
+      if (ApexState.monacoEditor && ApexState.activeTab !== 'welcome') {
+        saveFile();
+        log('[INFO] Auto-saved');
+      }
+    }, ApexState.settings.autoSaveDelay);
+  }
+
+  // Hook Monaco content change for auto-save via polling (Monaco is loaded asynchronously)
+  const _monacoInterval = setInterval(() => {
+    if (ApexState.monacoEditor) {
+      clearInterval(_monacoInterval);
+      ApexState.monacoEditor.onDidChangeModelContent((e) => {
+        let deltaLines = 0;
+        if (e && Array.isArray(e.changes)) {
+          e.changes.forEach((change) => {
+            const linesAdded = change.text ? change.text.split('\n').length - 1 : 0;
+            const linesRemoved = change.range
+              ? change.range.endLineNumber - change.range.startLineNumber
+              : 0;
+            deltaLines += linesAdded - linesRemoved;
+          });
+        }
+        if (deltaLines < 0) {
+          // Only track lines written; ignore pure deletions in this metric.
+          deltaLines = 0;
+        }
+        ApexState.session.linesWritten += deltaLines;
+        scheduleAutoSave();
+      });
+    }
+  }, 500);
+
+  /* ── Zen Mode ── */
+  ApexState.settings.zenMode = false;
+  window.toggleZenMode = function (on) {
+    ApexState.settings.zenMode = on;
+    document.body.classList.toggle('zen-mode', on);
+    termPrint('output', `[Settings] Zen Mode: ${on ? 'ON' : 'OFF'}`);
+  };
+
+  /* ── Pomodoro Timer ── */
+  let _pomodoroTimer = null;
+  let _pomodoroRemaining = 0;
+  let _pomodoroPhase = 'work';
+
+  window.togglePomodoro = function (on) {
+    const status = document.getElementById('pomodoro-status');
+    if (status) status.style.display = on ? '' : 'none';
+    if (on) { startPomodoro(); }
+    else { clearInterval(_pomodoroTimer); _pomodoroTimer = null; }
+  };
+
+  function startPomodoro() {
+    const workMins  = parseInt(document.getElementById('settings-pomodoro-work')?.value || 25);
+    const breakMins = parseInt(document.getElementById('settings-pomodoro-break')?.value || 5);
+    _pomodoroPhase = 'work';
+    _pomodoroRemaining = workMins * 60;
+    clearInterval(_pomodoroTimer);
+    _pomodoroTimer = setInterval(() => {
+      _pomodoroRemaining--;
+      const m = Math.floor(_pomodoroRemaining / 60);
+      const s = _pomodoroRemaining % 60;
+      const clockEl = document.getElementById('pomodoro-clock');
+      const phaseEl = document.getElementById('pomodoro-phase');
+      if (clockEl) clockEl.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+      if (_pomodoroRemaining <= 0) {
+        if (_pomodoroPhase === 'work') {
+          _pomodoroPhase = 'break';
+          _pomodoroRemaining = breakMins * 60;
+          if (phaseEl) phaseEl.textContent = '☕ Break';
+          termPrint('output', '[Pomodoro] 🍅 Work session done! Take a break.');
+          if (ApexState.settings.notificationsEnabled) {
+          try { new Notification('APEX IDE', { body: 'Pomodoro work session done! Take a break. ☕' }); } catch (_) {}
+          }
+        } else {
+          _pomodoroPhase = 'work';
+          _pomodoroRemaining = workMins * 60;
+          if (phaseEl) phaseEl.textContent = '🍅 Work';
+          termPrint('output', '[Pomodoro] ☕ Break done! Back to work.');
+        }
+      }
+    }, 1000);
+  }
+
+  window.resetPomodoro = function () {
+    clearInterval(_pomodoroTimer);
+    _pomodoroTimer = null;
+    const cb = document.getElementById('settings-pomodoro');
+    if (cb) cb.checked = false;
+    const status = document.getElementById('pomodoro-status');
+    if (status) status.style.display = 'none';
+    termPrint('output', '[Pomodoro] Reset');
+  };
+
+  /* ── Notifications ── */
+  ApexState.settings.notificationsEnabled = false;
+  ApexState.settings.soundsEnabled = true;
+
+  window.toggleNotifications = function (on) {
+    if (!('Notification' in window)) {
+      const cb = document.getElementById('settings-notifs');
+      if (cb) cb.checked = false;
+      termPrint('warn', '[Settings] Desktop notifications not supported in this browser');
+      return;
+    }
+    if (on && Notification.permission === 'default') {
+      Notification.requestPermission().then(p => {
+        ApexState.settings.notificationsEnabled = p === 'granted';
+        const cb = document.getElementById('settings-notifs');
+        if (cb) cb.checked = ApexState.settings.notificationsEnabled;
+      });
+    } else {
+      ApexState.settings.notificationsEnabled = on && Notification.permission === 'granted';
+    }
+  };
+
+  window.toggleSounds = function (on) {
+    ApexState.settings.soundsEnabled = on;
+    termPrint('output', `[Settings] Sound effects: ${on ? 'ON' : 'OFF'}`);
+  };
+
+  ApexState.settings.aiChimeEnabled = true;
+  window.toggleAIChime = function (on) {
+    ApexState.settings.aiChimeEnabled = on;
+  };
+
+  /* ── Play a brief Web-Audio chime ── */
+  window.playChime = function () {
+    if (!ApexState.settings.soundsEnabled || !ApexState.settings.aiChimeEnabled) return;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.4);
+      osc.onended = () => ctx.close();
+    } catch (_) {}
+  };
+
+  /* ── Clear All Settings ── */
+  window.clearAllSettings = function () {
+    if (!confirm('Clear all APEX settings and reset? This cannot be undone.')) return;
+    localStorage.removeItem('apex_state');
+    localStorage.removeItem('apex_onboarded');
+    localStorage.removeItem('apex_chat_history');
+    location.reload();
+  };
+
+  /* ── Session update on settings open ── */
+  const _origSwitchActivity = window.switchActivity;
+  window.switchActivity = function (name, btn) {
+    const result = _origSwitchActivity(name, btn);
+    if (name === 'settings') updateSessionUI();
+    return result;
+  };
+}());
+
 /* ─── Global Hotkeys ──────────────────────────────────────────────── */
 document.addEventListener('keydown', e => {
   const ctrl = e.ctrlKey || e.metaKey;
@@ -1980,6 +2567,7 @@ document.addEventListener('keydown', e => {
   if (ctrl && e.shiftKey && e.key === 'L') { e.preventDefault(); switchActivity('logic-mode'); return; }
   if (ctrl && e.altKey && !e.shiftKey && e.key.toLowerCase() === 'v') { e.preventDefault(); openVisualizerTab(); return; }
   if (ctrl && e.shiftKey && e.key === 'J') { e.preventDefault(); switchActivity('chat'); return; }
+  if (ctrl && e.key === 'm' && !e.shiftKey) { e.preventDefault(); switchActivity('music-player'); return; }
   if (ctrl && e.key === 's') { e.preventDefault(); saveFile(); return; }
   if (ctrl && e.key === 'g') { e.preventDefault(); goToLine(); return; }
   if (e.altKey && e.shiftKey && e.key === 'F') { e.preventDefault(); formatDocument(); return; }
