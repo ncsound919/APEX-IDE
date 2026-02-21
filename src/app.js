@@ -181,8 +181,8 @@ const ApexBackend = (() => {
   /* ── AI Task Orchestrator ── */
   const aiTasks = {
     list:   ()                                          => get('/api/ai/tasks'),
-    create: (task_type, context, provider, model, apiKey) =>
-      post('/api/ai/tasks', { task_type, context, provider, model, apiKey }),
+    create: (task_type, context, provider, model, apiKey, ollamaEndpoint) =>
+      post('/api/ai/tasks', { task_type, context, provider, model, apiKey, ollamaEndpoint }),
     get:    (id)                                        => get(`/api/ai/tasks/${id}`),
   };
 
