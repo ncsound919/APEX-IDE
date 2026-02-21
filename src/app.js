@@ -8,8 +8,27 @@
 const APEX_VERSION = '2.0.0';
 const MAX_IMPORT_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
+function encodeBase64(str) {
+  // Prefer browser btoa when available
+  if (typeof btoa === 'function') {
+    // Ensure UTF-8 safety
+    return btoa(unescape(encodeURIComponent(str)));
+  }
+  // Fallback for Node/Electron environments
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(str, 'utf8').toString('base64');
+  }
+  // Last-resort, deterministic hex encoding
+  return Array.from(str)
+    .map(function (ch) { return ch.charCodeAt(0).toString(16).padStart(2, '0'); })
+    .join('');
+}
+
 function getFileId(name) {
-  return 'file-' + name.replace(/[^a-z0-9]/gi, '-');
+  var encoded = encodeBase64(String(name));
+  // Make the Base64 string safe for use in IDs/keys
+  encoded = encoded.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  return 'file-' + encoded;
 }
 
 /* ─── State ──────────────────────────────────────────────────────── */
