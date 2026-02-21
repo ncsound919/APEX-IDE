@@ -705,7 +705,14 @@ function scheduleNFTDrop() {
   if (!name) return;
   const item = document.createElement('div');
   item.className = 'drop-item';
-  item.innerHTML = `<span class="drop-name">${name}</span><span class="drop-status pending">Scheduled</span>`;
+  const nameSpan = document.createElement('span');
+  nameSpan.className = 'drop-name';
+  nameSpan.textContent = name;
+  const statusSpan = document.createElement('span');
+  statusSpan.className = 'drop-status pending';
+  statusSpan.textContent = 'Scheduled';
+  item.appendChild(nameSpan);
+  item.appendChild(statusSpan);
   document.getElementById('scheduled-drops').appendChild(item);
   termPrint('output', `[Monetization] NFT drop scheduled: ${name}`);
 }
