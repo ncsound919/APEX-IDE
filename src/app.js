@@ -769,13 +769,88 @@ function runSearch(query) {
 /* ─── Settings ────────────────────────────────────────────────────── */
 function changeTheme(theme) { termPrint('output', `[Settings] Theme: ${theme}`); }
 function changeFontSize(size) {
+  const sizeNum = parseInt(size) || 14;
+  const input = document.getElementById('settings-font-size');
+  if (input) input.value = sizeNum;
   if (ApexState.monacoEditor) ApexState.monacoEditor.updateOptions({ fontSize: parseInt(size) });
 }
 function toggleVimMode(on) { termPrint('output', `[Settings] Vim mode: ${on ? 'ON' : 'OFF'}`); }
+function toggleWordWrap(on) {
+  if (ApexState.monacoEditor) ApexState.monacoEditor.updateOptions({ wordWrap: on ? 'on' : 'off' });
+}
+function setMinimap(on) {
+  ApexState.minimapEnabled = !!on;
+  if (ApexState.monacoEditor) ApexState.monacoEditor.updateOptions({ minimap: { enabled: ApexState.minimapEnabled } });
+}
 function toggleVimModeCmd() {
   const cb = document.getElementById('vim-mode');
   if (cb) { cb.checked = !cb.checked; toggleVimMode(cb.checked); }
 }
+
+function buildDeepCustomizationConfig() {
+  const num = (id, fallback) => parseInt(document.getElementById(id)?.value, 10) || fallback;
+  return {
+    theme: document.getElementById('settings-theme')?.value || 'hiphop-dark',
+    fontSize: num('settings-font-size', 14),
+    vimMode: !!document.getElementById('vim-mode')?.checked,
+    wordWrap: !!document.getElementById('settings-word-wrap')?.checked,
+    minimap: !!document.getElementById('settings-minimap')?.checked,
+    autoSave: !!document.getElementById('settings-autosave')?.checked,
+    autoSaveDelay: num('settings-autosave-delay', 1000),
+    zenMode: !!document.getElementById('settings-zen')?.checked,
+    pomodoroWorkMins: num('settings-pomodoro-work', 25),
+    pomodoroBreakMins: num('settings-pomodoro-break', 5),
+    soundsEnabled: !!document.getElementById('settings-sounds')?.checked,
+    aiChimeEnabled: !!document.getElementById('settings-ai-chime')?.checked,
+  };
+}
+
+window.loadDeepCustomizationJSON = function () {
+  const area = document.getElementById('settings-deep-json');
+  if (!area) return;
+  area.value = JSON.stringify(buildDeepCustomizationConfig(), null, 2);
+};
+
+window.applyDeepCustomization = function () {
+  const area = document.getElementById('settings-deep-json');
+  if (!area) return;
+  let config = {};
+  try { config = JSON.parse(area.value || '{}'); } catch (_) { termPrint('warn', '[Settings] Invalid customization JSON'); return; }
+  if (!config || typeof config !== 'object' || Array.isArray(config)) { termPrint('warn', '[Settings] Customization JSON must be an object'); return; }
+
+  const applyBool = (key, id, fn) => {
+    if (typeof config[key] !== 'boolean') return;
+    const el = document.getElementById(id);
+    if (el) el.checked = config[key];
+    fn(config[key]);
+  };
+  const applyNum = (key, id, fn) => {
+    if (typeof config[key] !== 'number' || !Number.isFinite(config[key])) return;
+    const el = document.getElementById(id);
+    if (el) el.value = config[key];
+    fn(config[key]);
+  };
+
+  if (typeof config.theme === 'string') {
+    const theme = document.getElementById('settings-theme');
+    if (theme) theme.value = config.theme;
+    changeTheme(config.theme);
+  }
+  applyNum('fontSize', 'settings-font-size', changeFontSize);
+  applyBool('vimMode', 'vim-mode', toggleVimMode);
+  applyBool('wordWrap', 'settings-word-wrap', toggleWordWrap);
+  applyBool('minimap', 'settings-minimap', setMinimap);
+  if (typeof window.toggleAutoSave === 'function') applyBool('autoSave', 'settings-autosave', window.toggleAutoSave);
+  if (typeof window.setAutoSaveDelay === 'function') applyNum('autoSaveDelay', 'settings-autosave-delay', window.setAutoSaveDelay);
+  if (typeof window.toggleZenMode === 'function') applyBool('zenMode', 'settings-zen', window.toggleZenMode);
+  applyNum('pomodoroWorkMins', 'settings-pomodoro-work', () => {});
+  applyNum('pomodoroBreakMins', 'settings-pomodoro-break', () => {});
+  if (typeof window.toggleSounds === 'function') applyBool('soundsEnabled', 'settings-sounds', window.toggleSounds);
+  if (typeof window.toggleAIChime === 'function') applyBool('aiChimeEnabled', 'settings-ai-chime', window.toggleAIChime);
+
+  window.loadDeepCustomizationJSON();
+  termPrint('output', '[Settings] Deep customization applied');
+};
 
 function updateApiKey(provider, value) {
   if (provider === 'ollama') {
@@ -805,6 +880,7 @@ function populateSettingsKeys() {
     if (el && val) el.value = val;
   });
   renderSettingsComponents();
+  loadDeepCustomizationJSON();
 }
 
 /* ─── Project Theme ───────────────────────────────────────────────── */
