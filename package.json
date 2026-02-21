@@ -1,0 +1,22 @@
+{
+  "name": "apex-ide",
+  "version": "1.0.0",
+  "description": "APEX IDE - A hip-hop themed desktop IDE with Megacode integrations",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx serve . -p 3000",
+    "dev": "npx serve . -p 3000 --no-clipboard"
+  },
+  "keywords": [
+    "ide",
+    "apex",
+    "megacode",
+    "llm",
+    "hip-hop"
+  ],
+  "author": "ncsound919",
+  "license": "MIT",
+  "devDependencies": {
+    "serve": "^14.2.5"
+  }
+}

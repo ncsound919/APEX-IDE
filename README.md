@@ -1,2 +1,97 @@
-# APEX-IDE
-New ide
+# ⬡ APEX IDE — Megacode Edition
+
+> **Where Code Meets Culture** — A hip-hop themed desktop IDE built from the `Desktop IDE` JSON specification.
+
+![APEX IDE](https://img.shields.io/badge/APEX-IDE-f5c518?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTEyIDJMMyA3djEwbDkgNSA5LTVWN3oiIGZpbGw9IiNmNWM1MTgiLz48L3N2Zz4=)
+![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
+
+## Features
+
+Built from the [`Desktop IDE`](Desktop%20IDE) JSON specification:
+
+### 🏗️ Core Components
+| Component | Description |
+|-----------|-------------|
+| **Window Manager** | Tiling/floating layout with split editor panes |
+| **Terminal Emulator** | Multi-tab terminal with command history and Megacode session support |
+| **File Browser** | Git-aware file tree with language icons |
+
+### 🧠 Megacode Optimizations
+| Panel | Description |
+|-------|-------------|
+| **LLM Router Panel** | Provider health dashboard, cache hit rates, token usage charts, one-click failover |
+| **IDE Bridge Hub** | VSCode/Zed/Cursor/JetBrains bridge cards, quality score indicators |
+| **Vibe Layer Dashboard** | Confidence/Intent scores (live), one-click fixes queue, undo stack visualizer, Rookie/Expert mode |
+
+### 🎛️ Domain Adapters
+- 🎵 **Music Production** — DAW plugin scaffolder, WebAudio preview, Beat script runner (Ollama/DeepSeek)
+- 🧬 **Biotech** — PubChem/SMILES visualizer, Histotripsy sim console, MuTracker hook
+- 🎨 **Graphic Novels / NFTs** — NFT mint preview, Panel layout editor, Gemini Vision storyboarding
+
+### 💰 Monetization Panel
+- Gumroad / Stripe revenue dashboard
+- NFT Drop Scheduler
+- Session stats for pro tiers
+
+### ⚡ Performance
+- `<2GB` target via lazy modules, virtual scrolling, no Docker
+- SQLite-ready session architecture (offline-first)
+- Multi-LLM token optimizer
+- Offline-first with Ollama
+
+### 🎨 UI/UX
+- **Hip-hop culture theme** — Bold Bebas Neue fonts, comic gradients, boxing sim motifs
+- **Vim-like hotkeys** — Customizable via settings
+- **Onboarding wizard** — LLM key setup, project import (Overlay365/Cheetah)
+- **Monaco Editor** — VSCode-grade code editing with APEX dark theme
+
+## Quick Start
+
+```bash
+# Install dependencies
+npm install
+
+# Launch dev server
+npm start
+# → http://localhost:3000
+```
+
+Or just open `index.html` directly in a modern browser.
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+P` | Command Palette |
+| `` Ctrl+` `` | Toggle Terminal |
+| `Ctrl+B` | Toggle Sidebar |
+| `Ctrl+Shift+E` | Explorer |
+| `Ctrl+Shift+F` | Search |
+| `Ctrl+Shift+G` | Git |
+| `Ctrl+S` | Save File |
+| `Ctrl+\` | Split Editor |
+
+## Architecture
+
+```
+APEX-IDE/
+├── index.html          # Main entry point (all components)
+├── src/
+│   ├── styles.css      # Hip-hop theme (CSS variables + components)
+│   └── app.js          # Application logic, state, terminal, Monaco init
+├── package.json        # npm config + dev server
+└── Desktop IDE         # Original JSON specification
+```
+
+## Spec Reference
+
+The IDE was built from the `Desktop IDE` file, which defines:
+- Core components (window manager, terminal, file browser)
+- Megacode optimizations (LLM router, IDE bridge, vibe layer)
+- Project ecosystem support (domain adapters, monetization)
+- Low-spec constraints (`<2GB` RAM, 460GB storage, lazy modules)
+- UI/UX guidelines (hip-hop aesthetic, hotkeys, onboarding)
+
+---
+
+*APEX IDE — Toward the $500M Vision* 🚀
