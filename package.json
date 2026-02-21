@@ -1,6 +1,6 @@
 {
   "name": "apex-ide",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "APEX IDE - A hip-hop themed desktop IDE with Megacode integrations",
   "main": "index.html",
   "scripts": {

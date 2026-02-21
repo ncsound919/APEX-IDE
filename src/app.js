@@ -182,6 +182,8 @@ const ApexState = {
   monacoEditor: null,
   minimapEnabled: true,
   _codeBlockCounter: 0,
+  fileBuffers: {},           // { 'file-id': 'content…' } — per-file content storage
+  fileNodes: {},             // { 'file-id': node } — maps file IDs to their tree nodes
   providers: {
     openai:    { name: 'OpenAI GPT-4o',      status: 'online',   latency: 124 },
     claude:    { name: 'Claude 3.5 Sonnet',  status: 'online',   latency: 89  },
@@ -262,6 +264,10 @@ const COMMANDS = [
   { icon: '💙', label: 'Inspired: VSCode Command Brain', shortcut: '',       fn: () => runInspiredFeature('vscode-command-brain') },
   { icon: '🌊', label: 'Inspired: Windsurf Flow Mode', shortcut: '',         fn: () => runInspiredFeature('windsurf-flow') },
   // Editor utilities
+  { icon: '🔎', label: 'Find in Editor',          shortcut: 'Ctrl+F',        fn: () => { if (ApexState.monacoEditor) ApexState.monacoEditor.trigger('keyboard', 'actions.find', null); } },
+  { icon: '🔄', label: 'Find and Replace',        shortcut: 'Ctrl+H',        fn: () => { if (ApexState.monacoEditor) ApexState.monacoEditor.trigger('keyboard', 'editor.action.startFindReplaceAction', null); } },
+  { icon: '↩️', label: 'Undo',                    shortcut: 'Ctrl+Z',        fn: () => undoAction() },
+  { icon: '↪️', label: 'Redo',                    shortcut: 'Ctrl+Shift+Z',  fn: () => redoAction() },
   { icon: '✏️', label: 'Format Document',          shortcut: 'Shift+Alt+F',   fn: () => formatDocument()      },
   { icon: '🔢', label: 'Go to Line',              shortcut: 'Ctrl+G',        fn: () => goToLine()            },
   { icon: '🗺️', label: 'Toggle Minimap',           shortcut: '',              fn: () => toggleMinimap()       },
@@ -387,6 +393,12 @@ function initApp() {
   renderMCPServers();
   renderCLIInstances();
   renderLogicPlan();
+
+  // Restore saved theme
+  try {
+    const savedTheme = localStorage.getItem('apex_theme');
+    if (savedTheme && THEMES[savedTheme]) changeTheme(savedTheme);
+  } catch (_) {}
 }
 
 /* ─── Load Monaco ─────────────────────────────────────────────────── */
@@ -496,14 +508,13 @@ function renderFileTree(tree = SAMPLE_TREE) {
 }
 
 function openFileTab(node) {
-  const id = `file-${node.name.replace(/[^a-z0-9]/gi, '-')}`;
+  const id = getFileId(node.name);
+  ApexState.fileNodes[id] = node;
   if (!ApexState.openTabs.includes(id)) {
     ApexState.openTabs.push(id);
     addTabUI(id, node.name, getFileIcon(node.name));
   }
   activateTab(id);
-  // Show Monaco pane with correct language
-  showMonacoPaneFor(node);
 }
 
 function addTabUI(id, name, icon) {
@@ -541,7 +552,8 @@ function activateTab(id) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.file === id));
 
   // Update breadcrumb
-  const fileName = id.replace('file-', '').replace(/-/g, '.');
+  const node = ApexState.fileNodes[id];
+  const fileName = node ? node.name : id.replace('file-', '');
   const breadcrumbFile = document.getElementById('breadcrumb-file');
   const breadcrumbSep2 = document.getElementById('breadcrumb-sep2');
   if (id !== 'welcome') {
@@ -552,13 +564,17 @@ function activateTab(id) {
     if (breadcrumbSep2) breadcrumbSep2.style.display = 'none';
   }
 
-  // Show correct pane
+  // Show correct pane and load file content
   if (id === 'welcome') {
     showPane('welcome');
   } else {
-    showPane('editor');
+    if (node) {
+      showMonacoPaneFor(node);
+    } else {
+      showPane('editor');
+    }
   }
-  document.getElementById('status-file').textContent = id.replace('file-', '').replace(/-/g, '.');
+  document.getElementById('status-file').textContent = fileName;
 }
 
 function showPane(name) {
@@ -599,6 +615,34 @@ function showMonacoPaneFor(node) {
     } else {
       applyContent(`// ${node.name}\n`);
     }
+    const langMap = { js: 'javascript', ts: 'typescript', css: 'css', html: 'html', json: 'json', md: 'markdown', py: 'python', go: 'go', rs: 'rust', sh: 'shell', txt: 'plaintext' };
+    const ext = node.name.split('.').pop().toLowerCase();
+    const lang = langMap[ext] || 'plaintext';
+    const fileId = getFileId(node.name);
+
+    // Save current buffer before switching
+    const currentModel = ApexState.monacoEditor.getModel();
+    if (currentModel && ApexState._currentFileId && ApexState._currentFileId !== fileId) {
+      ApexState.fileBuffers[ApexState._currentFileId] = ApexState.monacoEditor.getValue();
+    }
+
+    // Skip if already showing this file
+    if (ApexState._currentFileId === fileId && currentModel) {
+      return;
+    }
+
+    // Restore saved content or use language-appropriate default
+    const savedContent = ApexState.fileBuffers[fileId];
+    const content = savedContent ?? '';
+
+    const oldModel = ApexState.monacoEditor.getModel();
+    const model = monaco.editor.createModel(content, lang);
+    ApexState.monacoEditor.setModel(model);
+    if (oldModel && oldModel !== model) {
+      oldModel.dispose();
+    }
+    ApexState._currentFileId = fileId;
+    document.getElementById('status-lang').textContent = lang.charAt(0).toUpperCase() + lang.slice(1);
   }
 }
 
@@ -608,6 +652,10 @@ function closeTab(e, id) {
   if (idx > -1) ApexState.openTabs.splice(idx, 1);
   const tab = document.querySelector(`.tab[data-file="${id}"]`);
   if (tab) tab.remove();
+  // Reset current file tracking so the next tab load works
+  if (ApexState._currentFileId === id) {
+    ApexState._currentFileId = null;
+  }
   // Activate previous tab
   const remaining = ApexState.openTabs;
   if (remaining.length > 0) {
@@ -741,7 +789,7 @@ function initTerminal() {
   termPrint('output', '| |_| |  __/| |___|__   _|| || |_| | |___ ');
   termPrint('output', ' \\___/|_|   |_____|  |_||___|____/|_____|');
   termPrint('output', '');
-  termPrint('output', 'APEX IDE — Megacode Edition  v1.0.0');
+  termPrint('output', `APEX IDE — Megacode Edition  v${APEX_VERSION}`);
   termPrint('output', 'Type "help" for available commands.\n');
 }
 
@@ -795,11 +843,23 @@ const CMD_HANDLERS = {
     termPrint('output', 'Available commands:');
     termPrint('output', '  help          — Show this help');
     termPrint('output', '  ls            — List files');
+    termPrint('output', '  cat <file>    — Display file contents');
+    termPrint('output', '  touch <file>  — Create a new file');
+    termPrint('output', '  mkdir <dir>   — Create a new directory');
+    termPrint('output', '  rm <file>     — Remove a file or directory');
     termPrint('output', '  git status    — Show git status');
     termPrint('output', '  git pull/push — Git operations');
     termPrint('output', '  npm run start — Start dev server');
     termPrint('output', '  megacode      — Start Megacode session');
     termPrint('output', '  ollama        — Interact with Ollama');
+    termPrint('output', '  history       — Show command history');
+    termPrint('output', '  date          — Show current date/time');
+    termPrint('output', '  uptime        — Show session uptime');
+    termPrint('output', '  env           — Show environment variables');
+    termPrint('output', '  whoami        — Show current user');
+    termPrint('output', '  echo <text>   — Echo text');
+    termPrint('output', '  theme <name>  — Switch color theme');
+    termPrint('output', '  version       — Show IDE version');
     termPrint('output', '  clear         — Clear terminal');
   },
   clear: () => { document.getElementById('terminal-output').innerHTML = ''; },
@@ -826,6 +886,71 @@ const CMD_HANDLERS = {
   pwd: () => termPrint('output', '/home/apex/projects'),
   echo: (args) => termPrint('output', args.join(' ')),
   whoami: () => termPrint('output', ApexState.userHandle),
+  date: () => termPrint('output', new Date().toString()),
+  uptime: () => {
+    const session = ApexState.session;
+    if (!session || !session.startTime) {
+      termPrint('warn', 'Session uptime is not available yet (session not initialized).');
+      return;
+    }
+    const mins = Math.floor((Date.now() - session.startTime) / 60000);
+    termPrint('output', `Session uptime: ${mins < 60 ? mins + 'm' : Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm'}`);
+  },
+  history: () => {
+    if (ApexState.terminalHistory.length === 0) { termPrint('output', '(no history)'); return; }
+    ApexState.terminalHistory.slice().reverse().forEach((cmd, i) => termPrint('output', `  ${i + 1}  ${cmd}`));
+  },
+  cat: (args) => {
+    if (!args.length) { termPrint('warn', 'Usage: cat <filename>'); return; }
+    const name = args[0];
+    const fileId = getFileId(name);
+    const content = ApexState.fileBuffers[fileId];
+    if (content != null) { termPrint('output', content); }
+    else { termPrint('error', `cat: ${name}: No content stored (open and edit the file first)`); }
+  },
+  touch: (args) => {
+    if (!args.length) { termPrint('warn', 'Usage: touch <filename>'); return; }
+    const name = args[0];
+    const exists = SAMPLE_TREE.some(n => n.name === name);
+    if (exists) { termPrint('output', `touch: '${name}' already exists`); return; }
+    const node = { name, type: 'file', depth: 0, lang: 'javascript' };
+    SAMPLE_TREE.push(node);
+    const fileId = getFileId(name);
+    ApexState.fileBuffers[fileId] = '';
+    renderFileTree();
+    termPrint('output', `Created: ${name}`);
+  },
+  mkdir: (args) => {
+    if (!args.length) { termPrint('warn', 'Usage: mkdir <dirname>'); return; }
+    const name = args[0];
+    SAMPLE_TREE.push({ name, type: 'folder', depth: 0, open: true, children: [] });
+    renderFileTree();
+    termPrint('output', `Created directory: ${name}`);
+  },
+  rm: (args) => {
+    if (!args.length) { termPrint('warn', 'Usage: rm <filename>'); return; }
+    const name = args[0];
+    const idx = SAMPLE_TREE.findIndex(n => n.name === name);
+    if (idx === -1) { termPrint('error', `rm: ${name}: No such file or directory`); return; }
+    const fileId = getFileId(name);
+    delete ApexState.fileBuffers[fileId];
+    SAMPLE_TREE.splice(idx, 1);
+    renderFileTree();
+    termPrint('output', `Removed: ${name}`);
+  },
+  env: () => {
+    termPrint('output', `USER=${ApexState.userHandle}`);
+    termPrint('output', `MODE=${ApexState.mode}`);
+    termPrint('output', `PROJECT=${ApexState.projectName || '(none)'}`);
+    termPrint('output', `PROJECT_TYPE=${ApexState.projectType}`);
+    termPrint('output', `EDITOR=monaco`);
+    termPrint('output', `TERM=apex-terminal`);
+  },
+  version: () => termPrint('output', `APEX IDE v${APEX_VERSION} — Megacode Edition`),
+  theme: (args) => {
+    if (!args.length) { termPrint('output', 'Available themes: ' + Object.keys(THEMES).join(', ')); return; }
+    changeTheme(args[0]);
+  },
 };
 
 function processCommand(raw) {
@@ -954,8 +1079,16 @@ function applyFix(btn) {
   termPrint('output', '[Vibe] Fix applied ✓');
 }
 
-function undoAction() { termPrint('output', '[Editor] Undo'); }
-function redoAction() { termPrint('output', '[Editor] Redo'); }
+function undoAction() {
+  if (ApexState.monacoEditor) {
+    ApexState.monacoEditor.trigger('keyboard', 'undo', null);
+  }
+}
+function redoAction() {
+  if (ApexState.monacoEditor) {
+    ApexState.monacoEditor.trigger('keyboard', 'redo', null);
+  }
+}
 
 function setVibeMode(mode) {
   ApexState.mode = mode;
@@ -1163,26 +1296,115 @@ function saveFile() {
   } else {
     termPrint('output', '[Editor] File saved');
   }
+
+function saveFile() {
+  if (!ApexState.monacoEditor || ApexState.activeTab === 'welcome') {
+    showToast('No file to save', 'warn');
+    return;
+  }
+  const content = ApexState.monacoEditor.getValue();
+  ApexState.fileBuffers[ApexState.activeTab] = content;
+  // Track saves for session stats
+  if (ApexState.session) ApexState.session.saves++;
+  // Persist all buffers to localStorage
+  try {
+    localStorage.setItem('apex_file_buffers', JSON.stringify(ApexState.fileBuffers));
+  } catch (err) {
+    if (err.name === 'QuotaExceededError') {
+      showToast('Storage full — unable to persist file. Consider clearing unused files.', 'error');
+    }
+  }
+  const node = ApexState.fileNodes[ApexState.activeTab];
+  const fileName = node ? node.name : ApexState.activeTab;
+  showToast(`Saved: ${fileName}`, 'success');
 }
 
 /* ─── Search ──────────────────────────────────────────────────────── */
 function runSearch(query) {
   const results = document.getElementById('search-results');
   if (!query) { results.innerHTML = '<p class="empty-state">Type to search…</p>'; return; }
-  // Simulate search results
-  const files = ['src/app.js', 'src/router.js', 'src/styles.css', 'package.json'];
-  const matches = files.filter(() => Math.random() > 0.4);
+
+  const useRegex = document.getElementById('search-regex')?.checked;
+  const matchCase = document.getElementById('search-case')?.checked;
+  const q = matchCase ? query : query.toLowerCase();
+  let re = null;
+  if (useRegex) {
+    try { re = new RegExp(query, matchCase ? '' : 'i'); } catch (err) {
+      const p = document.createElement('p');
+      p.className = 'empty-state';
+      p.textContent = `Invalid regex: ${err.message || 'parse error'}`;
+      results.innerHTML = '';
+      results.appendChild(p);
+      return;
+    }
+  }
+
+  // Collect all file nodes from the tree
+  function collectFiles(nodes, prefix) {
+    let out = [];
+    (nodes || []).forEach(n => {
+      const path = prefix ? prefix + '/' + n.name : n.name;
+      if (n.type === 'folder' && n.children) {
+        out = out.concat(collectFiles(n.children, path));
+      } else if (n.type === 'file') {
+        out.push({ path, node: n });
+      }
+    });
+    return out;
+  }
+  const allFiles = collectFiles(SAMPLE_TREE, '');
+
+  // Search in file names and file content buffers
+  const matches = [];
+  allFiles.forEach(({ path, node }) => {
+    const nameToCheck = matchCase ? path : path.toLowerCase();
+    const nameMatch = re ? (re.lastIndex = 0, re.test(path)) : nameToCheck.includes(q);
+    // Also search stored buffer content
+    const fileId = getFileId(node.name);
+    const content = ApexState.fileBuffers?.[fileId] || '';
+    const contentToCheck = matchCase ? content : content.toLowerCase();
+    const contentMatch = content && (re ? (re.lastIndex = 0, re.test(content)) : contentToCheck.includes(q));
+    if (nameMatch || contentMatch) {
+      matches.push({ path, node, contentMatch });
+    }
+  });
+
   if (matches.length === 0) { results.innerHTML = '<p class="empty-state">No results found</p>'; return; }
-  results.innerHTML = matches.map(f => `
-    <div class="file-item" onclick="termPrint('output','[Search] Opening ${f}')">
-      <span>${getFileIcon(f)}</span>
-      <span>${f}</span>
-    </div>
-  `).join('');
+  results.innerHTML = '';
+  matches.forEach(m => {
+    const icon = getFileIcon(m.path);
+    const item = document.createElement('div');
+    item.className = 'file-item';
+    const iconSpan = document.createElement('span');
+    iconSpan.textContent = icon;
+    const pathSpan = document.createElement('span');
+    pathSpan.textContent = m.path;
+    item.appendChild(iconSpan);
+    item.appendChild(pathSpan);
+    if (m.contentMatch) {
+      const badge = document.createElement('span');
+      badge.className = 'search-content-badge';
+      badge.textContent = 'content';
+      item.appendChild(badge);
+    }
+    item.addEventListener('click', () => openFileTab(m.node));
+    results.appendChild(item);
+  });
 }
 
 /* ─── Settings ────────────────────────────────────────────────────── */
-function changeTheme(theme) { termPrint('output', `[Settings] Theme: ${theme}`); }
+function changeTheme(theme) {
+  const t = THEMES[theme];
+  if (!t) { showToast(`Unknown theme: ${theme}`, 'warn'); return; }
+  Object.entries(t).forEach(([key, val]) => {
+    if (key.startsWith('--')) document.documentElement.style.setProperty(key, val);
+  });
+  if (t.monacoTheme && ApexState.monacoEditor && typeof monaco !== 'undefined') {
+    monaco.editor.setTheme(t.monacoTheme);
+  }
+  try { localStorage.setItem('apex_theme', theme); } catch (_) {}
+  showToast(`Theme: ${theme}`, 'success');
+}
 function changeFontSize(size) {
   const sizeNum = parseInt(size) || 14;
   const input = document.getElementById('settings-font-size');
@@ -2915,13 +3137,6 @@ function explainError() {
     termPrint('output', '[Settings] Session stats reset');
   };
 
-  // Track saves
-  const _origSaveFile = window.saveFile;
-  window.saveFile = function () {
-    ApexState.session.saves++;
-    return _origSaveFile?.apply(this, arguments);
-  };
-
   /* ── Auto-save ── */
   let _autoSaveTimer = null;
   ApexState.settings = ApexState.settings || {};
@@ -3093,6 +3308,8 @@ function explainError() {
     localStorage.removeItem('apex_state');
     localStorage.removeItem('apex_onboarded');
     localStorage.removeItem('apex_chat_history');
+    localStorage.removeItem('apex_file_buffers');
+    localStorage.removeItem('apex_theme');
     location.reload();
   };
 
@@ -3104,6 +3321,36 @@ function explainError() {
     return result;
   };
 }());
+
+/* ─── Toast Notification System ────────────────────────────────────── */
+function showToast(message, type = 'info') {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  const icons = { success: '✓', warn: '⚠', error: '✕', info: 'ℹ' };
+  const iconSpan = document.createElement('span');
+  iconSpan.className = 'toast-icon';
+  iconSpan.textContent = icons[type] || icons.info;
+  const msgSpan = document.createElement('span');
+  msgSpan.className = 'toast-msg';
+  msgSpan.textContent = message;
+  toast.appendChild(iconSpan);
+  toast.appendChild(msgSpan);
+  container.appendChild(toast);
+  // Trigger enter animation
+  requestAnimationFrame(() => toast.classList.add('toast-visible'));
+  setTimeout(() => {
+    toast.classList.remove('toast-visible');
+    toast.classList.add('toast-exit');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
 
 /* ─── Global Hotkeys ──────────────────────────────────────────────── */
 document.addEventListener('keydown', e => {
@@ -3123,6 +3370,11 @@ document.addEventListener('keydown', e => {
   if (ctrl && e.key === 'm' && !e.shiftKey) { e.preventDefault(); switchActivity('music-player'); return; }
   if (ctrl && e.key === 's') { e.preventDefault(); saveFile(); return; }
   if (ctrl && e.key === 'g') { e.preventDefault(); goToLine(); return; }
+  if (ctrl && e.key === 'f' && !e.shiftKey) { e.preventDefault(); if (ApexState.monacoEditor) ApexState.monacoEditor.trigger('keyboard', 'actions.find', null); return; }
+  if (ctrl && e.key === 'h') { e.preventDefault(); if (ApexState.monacoEditor) ApexState.monacoEditor.trigger('keyboard', 'editor.action.startFindReplaceAction', null); return; }
+  if (ctrl && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undoAction(); return; }
+  if (ctrl && e.key === 'z' && e.shiftKey) { e.preventDefault(); redoAction(); return; }
+  if (ctrl && e.key === 'y') { e.preventDefault(); redoAction(); return; }
   if (e.altKey && e.shiftKey && e.key === 'F') { e.preventDefault(); formatDocument(); return; }
   // AI action shortcuts (only when not typing in an input/textarea)
   const tag = document.activeElement?.tagName;
@@ -3137,6 +3389,12 @@ document.addEventListener('keydown', e => {
 
 /* ─── Boot ────────────────────────────────────────────────────────── */
 window.addEventListener('DOMContentLoaded', () => {
+  // Restore file buffers from localStorage
+  try {
+    const savedBuffers = localStorage.getItem('apex_file_buffers');
+    if (savedBuffers) ApexState.fileBuffers = JSON.parse(savedBuffers) || {};
+  } catch (_) {}
+
   // Check if already onboarded
   const saved = localStorage.getItem('apex_state');
   if (localStorage.getItem('apex_onboarded') && saved) {
@@ -3192,3 +3450,66 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   // Otherwise show onboarding (default)
 });
+
+/* ─── Drag & Drop File Import ─────────────────────────────────────── */
+(function () {
+  let _dragOverlay = null;
+  let _dragCount = 0;
+
+  document.addEventListener('dragenter', e => {
+    e.preventDefault();
+    _dragCount++;
+    if (_dragCount === 1 && !_dragOverlay) {
+      _dragOverlay = document.createElement('div');
+      _dragOverlay.className = 'drag-overlay';
+      const overlayText = document.createElement('div');
+      overlayText.className = 'drag-overlay-text';
+      overlayText.textContent = 'DROP FILES TO IMPORT';
+      _dragOverlay.appendChild(overlayText);
+      document.body.appendChild(_dragOverlay);
+    }
+  });
+
+  document.addEventListener('dragleave', e => {
+    e.preventDefault();
+    _dragCount--;
+    if (_dragCount <= 0) {
+      _dragCount = 0;
+      if (_dragOverlay) { _dragOverlay.remove(); _dragOverlay = null; }
+    }
+  });
+
+  document.addEventListener('dragover', e => e.preventDefault());
+
+  document.addEventListener('drop', e => {
+    e.preventDefault();
+    _dragCount = 0;
+    if (_dragOverlay) { _dragOverlay.remove(); _dragOverlay = null; }
+
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach(file => {
+      // Skip binary/large files
+      if (file.size > MAX_IMPORT_FILE_SIZE) { showToast(`Skipped ${file.name} (too large)`, 'warn'); return; }
+      // Check for duplicate names against both files and folders
+      const exists = SAMPLE_TREE.some(n => n.name === file.name);
+      if (exists) { showToast(`${file.name} already exists`, 'warn'); return; }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const node = { name: file.name, type: 'file', depth: 0, lang: 'javascript' };
+        SAMPLE_TREE.push(node);
+        const fileId = getFileId(file.name);
+        ApexState.fileBuffers[fileId] = reader.result;
+        ApexState.fileNodes[fileId] = node;
+        renderFileTree();
+        showToast(`Imported: ${file.name}`, 'success');
+      };
+      reader.onerror = () => {
+        showToast(`Failed to read: ${file.name}`, 'error');
+      };
+      reader.readAsText(file);
+    });
+  });
+}());
