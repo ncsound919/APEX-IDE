@@ -3020,7 +3020,10 @@ window.addEventListener('DOMContentLoaded', () => {
     if (_dragCount === 1 && !_dragOverlay) {
       _dragOverlay = document.createElement('div');
       _dragOverlay.className = 'drag-overlay';
-      _dragOverlay.innerHTML = '<div class="drag-overlay-text">DROP FILES TO IMPORT</div>';
+      const overlayText = document.createElement('div');
+      overlayText.className = 'drag-overlay-text';
+      overlayText.textContent = 'DROP FILES TO IMPORT';
+      _dragOverlay.appendChild(overlayText);
       document.body.appendChild(_dragOverlay);
     }
   });
