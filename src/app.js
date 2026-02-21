@@ -550,6 +550,9 @@ function showMonacoPaneFor(node) {
       const model = monaco.editor.createModel(text, lang);
       ApexState.monacoEditor.setModel(model);
       // Store path for save
+      if (!Object.prototype.hasOwnProperty.call(ApexState, 'activeFilePath')) {
+        ApexState.activeFilePath = null;
+      }
       ApexState.activeFilePath = node.backendPath || node.name;
       if (oldModel && oldModel !== model) oldModel.dispose();
       document.getElementById('status-lang').textContent = lang.charAt(0).toUpperCase() + lang.slice(1);
