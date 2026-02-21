@@ -672,6 +672,8 @@ const CMD_HANDLERS = {
     const name = args[0];
     const idx = SAMPLE_TREE.findIndex(n => n.name === name);
     if (idx === -1) { termPrint('error', `rm: ${name}: No such file or directory`); return; }
+    const fileId = getFileId(name);
+    delete ApexState.fileBuffers[fileId];
     SAMPLE_TREE.splice(idx, 1);
     renderFileTree();
     termPrint('output', `Removed: ${name}`);
