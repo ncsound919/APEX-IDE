@@ -2163,7 +2163,7 @@ function explainError() {
     clearTimeout(_autoSaveTimer);
     _autoSaveTimer = setTimeout(() => {
       if (ApexState.monacoEditor && ApexState.activeTab !== 'welcome') {
-        ApexState.session.saves++;
+        saveFile();
         log('[INFO] Auto-saved');
       }
     }, ApexState.settings.autoSaveDelay);
