@@ -385,7 +385,30 @@ app.post('/api/llm/proxy', fsLimiter, async (req, res) => {
       }, body);
     } else {
       // Ollama — forward to local endpoint
-      const endpoint = (ollamaEndpoint || 'http://localhost:11434').replace(/\/$/, '');
+      const defaultOllamaEndpoint = 'http://127.0.0.1:11434';
+      let endpoint = defaultOllamaEndpoint;
+
+      if (ollamaEndpoint) {
+        try {
+          const parsed = new URL(ollamaEndpoint);
+          const allowedHosts = new Set(['localhost', '127.0.0.1', '::1']);
+          const allowedProtocols = new Set(['http:', 'https:']);
+
+          if (!allowedProtocols.has(parsed.protocol)) {
+            throw new Error('Disallowed protocol for Ollama endpoint');
+          }
+
+          if (!allowedHosts.has(parsed.hostname)) {
+            throw new Error('Disallowed host for Ollama endpoint');
+          }
+
+          // Use only the origin (protocol + host + optional port), ignore any user path/query.
+          endpoint = parsed.origin;
+        } catch (e) {
+          // On any parse/validation error, fall back to the default local endpoint.
+          endpoint = defaultOllamaEndpoint;
+        }
+      }
       const ollamaURL = new URL('/api/chat', endpoint);
       result = await proxyPost(ollamaURL.toString(), {
         'Content-Type': 'application/json',
