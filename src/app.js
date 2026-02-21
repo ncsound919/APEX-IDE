@@ -30,6 +30,12 @@ const ApexState = {
   keys: { openai: '', anthropic: '', deepseek: '', ollama: 'http://localhost:11434' },
   projectName: '',
   projectType: 'general',
+  mcpServers: [
+    { name: 'Filesystem', cmd: 'npx @modelcontextprotocol/server-filesystem', connected: true },
+    { name: 'GitHub',     cmd: 'npx @modelcontextprotocol/server-github',     connected: false },
+  ],
+  cliHistory: [],
+  cliHistoryIdx: -1,
 };
 
 /* ─── Sample File Tree ───────────────────────────────────────────── */
@@ -68,6 +74,9 @@ const COMMANDS = [
   { icon: '🥊', label: 'Switch to Rookie Mode',   shortcut: '',              fn: () => setVibeMode('rookie') },
   { icon: '🔥', label: 'Switch to Expert Mode',   shortcut: '',              fn: () => setVibeMode('expert') },
   { icon: '🚀', label: 'Start Megacode Session',  shortcut: '',              fn: () => startMegacode()       },
+  { icon: '💻', label: 'Open CLI Runner',          shortcut: 'Ctrl+Shift+C',  fn: () => switchActivity('cli') },
+  { icon: '🔌', label: 'Open MCP Servers',         shortcut: 'Ctrl+Shift+M',  fn: () => switchActivity('mcp') },
+  { icon: '🖥️', label: 'Open Frontend Visualizer', shortcut: 'Ctrl+Shift+V',  fn: () => openVisualizerTab()   },
   { icon: '🔄', label: 'Restart IDE',             shortcut: '',              fn: () => location.reload()     },
 ];
 
@@ -157,6 +166,7 @@ function initApp() {
   log('[INFO] Monaco editor loading…');
   log(`[INFO] Mode: ${ApexState.mode.toUpperCase()}`);
   log(`[INFO] Project: ${ApexState.projectName || '(unnamed)'}`);
+  renderMCPServers();
 }
 
 /* ─── Load Monaco ─────────────────────────────────────────────────── */
@@ -823,6 +833,215 @@ function handleCPKey(e) {
 
 function splitEditor() { termPrint('output', '[Editor] Split view — use Ctrl+\\ in Monaco'); }
 
+/* ─── CLI Runner ──────────────────────────────────────────────────── */
+const CLI_QUICK_COMMANDS = {
+  'npm install':             () => cliSimulate('npm install', ['added 1247 packages in 8s']),
+  'npm run dev':             () => cliSimulate('npm run dev', ['> vite', '', '  VITE v5.0.0  ready in 312ms', '', '  ➜  Local:   http://localhost:5173/']),
+  'npm run build':           () => cliSimulate('npm run build', ['> vite build', 'vite v5.0.0 building for production…', '✓ 42 modules transformed.', 'dist/index.html   0.46 kB', 'dist/assets/index.js   142.38 kB  ✓ built in 1.83s']),
+  'npm run test':            () => cliSimulate('npm run test', ['> vitest', 'RUN  v1.0.0', '', 'src/app.test.js  (3 tests)', '  ✓ renders welcome screen', '  ✓ opens command palette', '  ✓ handles terminal input', 'Test Files  1 passed (1)', 'Tests       3 passed (3)']),
+  'npm run lint':            () => cliSimulate('npm run lint', ['> eslint src/', 'src/app.js: no problems found', '✓ 0 errors, 0 warnings']),
+  'npx vite':                () => cliSimulate('npx vite', ['  VITE v5.0.0  ready in 298ms', '', '  ➜  Local:   http://localhost:5173/', '  ➜  Network: http://192.168.1.1:5173/']),
+  'npx create-react-app .':  () => cliSimulate('npx create-react-app .', ['Creating a new React app…', 'Installing packages…', 'Success! Created project at current directory.']),
+  'npx create-next-app .':   () => cliSimulate('npx create-next-app .', ['Creating a new Next.js app…', '✓ Would you like to use TypeScript? No', '✓ App Router? Yes', 'Installing dependencies…', 'Success! Created app at current directory.']),
+};
+
+function cliPrint(type, text) {
+  const out = document.getElementById('cli-output');
+  if (!out) return;
+  const div = document.createElement('div');
+  div.className = `cli-line ${type}`;
+  div.textContent = text;
+  out.appendChild(div);
+  out.scrollTop = out.scrollHeight;
+}
+
+function cliSimulate(cmd, lines) {
+  cliPrint('cmd', `$ ${cmd}`);
+  let delay = 0;
+  lines.forEach(line => {
+    setTimeout(() => cliPrint('output', line), delay);
+    delay += 80;
+  });
+  setTimeout(() => cliPrint('info', `[Done] ${cmd}`), delay + 100);
+}
+
+function runCLICommand(cmd) {
+  switchActivity('cli');
+  const handler = CLI_QUICK_COMMANDS[cmd];
+  if (handler) {
+    handler();
+  } else {
+    cliSimulate(cmd, [`Running: ${cmd}…`, 'Done.']);
+  }
+}
+
+function handleCLIKey(e) {
+  const input = e.target;
+  if (e.key === 'Enter') {
+    const cmd = input.value.trim();
+    if (!cmd) return;
+    ApexState.cliHistory.unshift(cmd);
+    ApexState.cliHistoryIdx = -1;
+    input.value = '';
+    runCLICommand(cmd);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (ApexState.cliHistoryIdx < ApexState.cliHistory.length - 1) {
+      ApexState.cliHistoryIdx++;
+      input.value = ApexState.cliHistory[ApexState.cliHistoryIdx];
+    }
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (ApexState.cliHistoryIdx > 0) {
+      ApexState.cliHistoryIdx--;
+      input.value = ApexState.cliHistory[ApexState.cliHistoryIdx];
+    } else {
+      ApexState.cliHistoryIdx = -1;
+      input.value = '';
+    }
+  }
+}
+
+function submitCLIInput() {
+  const input = document.getElementById('cli-custom-input');
+  if (!input) return;
+  const cmd = input.value.trim();
+  if (!cmd) return;
+  ApexState.cliHistory.unshift(cmd);
+  ApexState.cliHistoryIdx = -1;
+  input.value = '';
+  runCLICommand(cmd);
+}
+
+function clearCLIOutput() {
+  const out = document.getElementById('cli-output');
+  if (out) out.innerHTML = '';
+}
+
+/* ─── MCP Servers ─────────────────────────────────────────────────── */
+function addMCPServer() {
+  const nameEl = document.getElementById('mcp-server-name');
+  const cmdEl  = document.getElementById('mcp-server-cmd');
+  const name = nameEl?.value.trim();
+  const cmd  = cmdEl?.value.trim();
+  if (!name || !cmd) { termPrint('warn', '[MCP] Please enter server name and command.'); return; }
+
+  const server = { name, cmd, connected: false };
+  ApexState.mcpServers.push(server);
+  nameEl.value = '';
+  cmdEl.value  = '';
+  renderMCPServers();
+  termPrint('output', `[MCP] Server added: ${name}`);
+}
+
+function renderMCPServers() {
+  const list = document.getElementById('mcp-server-list');
+  if (!list) return;
+  list.innerHTML = ApexState.mcpServers.map((s, i) => `
+    <div class="mcp-server-card" data-idx="${i}">
+      <span class="mcp-server-icon">🔌</span>
+      <div class="mcp-server-info">
+        <div class="mcp-server-name">${s.name}</div>
+        <div class="mcp-server-cmd">${s.cmd}</div>
+      </div>
+      <span class="mcp-status-dot ${s.connected ? 'connected' : 'disconnected'}"
+            title="${s.connected ? 'Connected' : 'Disconnected'}"
+            onclick="toggleMCPServer(${i})"></span>
+    </div>
+  `).join('');
+}
+
+function toggleMCPServer(idx) {
+  const server = ApexState.mcpServers[idx];
+  if (!server) return;
+  server.connected = !server.connected;
+  renderMCPServers();
+  termPrint('output', `[MCP] ${server.name}: ${server.connected ? 'connected' : 'disconnected'}`);
+}
+
+function invokeMCPTool(tool) {
+  termPrint('output', `[MCP] Invoking tool: ${tool}…`);
+  switchBottomTab('terminal', document.querySelector('.bottom-tab'));
+  const msgs = {
+    read_file:       '[MCP] read_file → Enter path in terminal: mcp read <path>',
+    write_file:      '[MCP] write_file → Enter path & content in terminal: mcp write <path> <content>',
+    list_directory:  '[MCP] list_directory → Listing project root…\n  src/  public/  package.json  README.md',
+    search_files:    '[MCP] search_files → Enter query in terminal: mcp search <query>',
+  };
+  setTimeout(() => termPrint('output', msgs[tool] || `[MCP] ${tool} ready`), 300);
+}
+
+/* ─── Frontend Visualizer ─────────────────────────────────────────── */
+function openVisualizerTab() {
+  if (!ApexState.openTabs.includes('visualizer')) {
+    ApexState.openTabs.push('visualizer');
+  }
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.file === 'visualizer'));
+  showPane('visualizer');
+  ApexState.activeTab = 'visualizer';
+  document.getElementById('status-file').textContent = 'Visualizer';
+}
+
+function setVizViewport(size, btn) {
+  document.querySelectorAll('.viz-btn[onclick*="setVizViewport"]').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const wrap = document.getElementById('visualizer-frame-wrap');
+  const iframe = document.getElementById('visualizer-iframe');
+  if (!wrap || !iframe) return;
+  const sizes = { desktop: { w: '100%', h: '100%' }, tablet: { w: '768px', h: '100%' }, mobile: { w: '375px', h: '100%' } };
+  const s = sizes[size] || sizes.desktop;
+  iframe.style.width  = s.w;
+  iframe.style.height = s.h;
+  wrap.dataset.viewport = size;
+}
+
+function loadVisualizerURL() {
+  const urlInput = document.getElementById('visualizer-url');
+  const url = urlInput?.value.trim();
+  const iframe = document.getElementById('visualizer-iframe');
+  if (!iframe || !url) return;
+  // Clear any stored HTML preview when loading a URL
+  iframe.removeAttribute('data-html');
+  const old = iframe.getAttribute('data-blob-url');
+  if (old) { URL.revokeObjectURL(old); iframe.removeAttribute('data-blob-url'); }
+  urlInput.placeholder = 'Enter URL or HTML to preview…';
+  iframe.src = url;
+  termPrint('output', `[Visualizer] Loading: ${url}`);
+}
+
+function refreshVisualizer() {
+  const iframe = document.getElementById('visualizer-iframe');
+  if (!iframe) return;
+  const stored = iframe.getAttribute('data-html');
+  if (stored) {
+    const old = iframe.getAttribute('data-blob-url');
+    if (old) URL.revokeObjectURL(old);
+    const blob = new Blob([stored], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    iframe.setAttribute('data-blob-url', url);
+    iframe.src = url;
+  } else if (iframe.src && iframe.src !== 'about:blank') {
+    iframe.contentWindow.location.reload();
+  }
+  termPrint('output', '[Visualizer] Refreshed');
+}
+
+function previewHTML() {
+  const html = document.getElementById('visualizer-html-input')?.value;
+  const iframe = document.getElementById('visualizer-iframe');
+  if (!iframe || !html) return;
+  const old = iframe.getAttribute('data-blob-url');
+  if (old) URL.revokeObjectURL(old);
+  iframe.setAttribute('data-html', html);
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  iframe.setAttribute('data-blob-url', url);
+  iframe.src = url;
+  document.getElementById('visualizer-url').value = '';
+  document.getElementById('visualizer-url').placeholder = '(HTML preview active)';
+  termPrint('output', '[Visualizer] Previewing HTML snippet');
+}
+
 /* ─── Global Hotkeys ──────────────────────────────────────────────── */
 document.addEventListener('keydown', e => {
   const ctrl = e.ctrlKey || e.metaKey;
@@ -833,6 +1052,9 @@ document.addEventListener('keydown', e => {
   if (ctrl && e.shiftKey && e.key === 'E') { e.preventDefault(); switchActivity('explorer'); return; }
   if (ctrl && e.shiftKey && e.key === 'F') { e.preventDefault(); switchActivity('search'); return; }
   if (ctrl && e.shiftKey && e.key === 'G') { e.preventDefault(); switchActivity('git'); return; }
+  if (ctrl && e.shiftKey && e.key === 'C') { e.preventDefault(); switchActivity('cli'); return; }
+  if (ctrl && e.shiftKey && e.key === 'M') { e.preventDefault(); switchActivity('mcp'); return; }
+  if (ctrl && e.shiftKey && e.key === 'V') { e.preventDefault(); openVisualizerTab(); return; }
   if (ctrl && e.key === 's') { e.preventDefault(); saveFile(); return; }
   if (e.key === 'Escape') { closeCommandPalette(); return; }
 });
