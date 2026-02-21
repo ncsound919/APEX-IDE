@@ -412,28 +412,32 @@
             <div class="mcp-section">
               <div class="section-label">AVAILABLE TOOLS</div>
               <div class="mcp-tools-list" id="mcp-tools-list">
-                <div class="mcp-tool-item" onclick="invokeMCPTool('read_file')">
+                <div class="mcp-tool-item" role="button" tabindex="0" onclick="invokeMCPTool('read_file')"
+                     onkeypress="if(event.key==='Enter'||event.key===' '){event.preventDefault();invokeMCPTool('read_file')}">
                   <span class="mcp-tool-icon">📖</span>
                   <div class="mcp-tool-info">
                     <div class="mcp-tool-name">read_file</div>
                     <div class="mcp-tool-desc">Read contents of a file</div>
                   </div>
                 </div>
-                <div class="mcp-tool-item" onclick="invokeMCPTool('write_file')">
+                <div class="mcp-tool-item" role="button" tabindex="0" onclick="invokeMCPTool('write_file')"
+                     onkeypress="if(event.key==='Enter'||event.key===' '){event.preventDefault();invokeMCPTool('write_file')}">
                   <span class="mcp-tool-icon">✏️</span>
                   <div class="mcp-tool-info">
                     <div class="mcp-tool-name">write_file</div>
                     <div class="mcp-tool-desc">Write content to a file</div>
                   </div>
                 </div>
-                <div class="mcp-tool-item" onclick="invokeMCPTool('list_directory')">
+                <div class="mcp-tool-item" role="button" tabindex="0" onclick="invokeMCPTool('list_directory')"
+                     onkeypress="if(event.key==='Enter'||event.key===' '){event.preventDefault();invokeMCPTool('list_directory')}">
                   <span class="mcp-tool-icon">📂</span>
                   <div class="mcp-tool-info">
                     <div class="mcp-tool-name">list_directory</div>
                     <div class="mcp-tool-desc">List files in a directory</div>
                   </div>
                 </div>
-                <div class="mcp-tool-item" onclick="invokeMCPTool('search_files')">
+                <div class="mcp-tool-item" role="button" tabindex="0" onclick="invokeMCPTool('search_files')"
+                     onkeypress="if(event.key==='Enter'||event.key===' '){event.preventDefault();invokeMCPTool('search_files')}">
                   <span class="mcp-tool-icon">🔍</span>
                   <div class="mcp-tool-info">
                     <div class="mcp-tool-name">search_files</div>

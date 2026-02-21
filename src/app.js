@@ -81,7 +81,7 @@ const COMMANDS = [
   { icon: '🚀', label: 'Start Megacode Session',  shortcut: '',              fn: () => startMegacode()       },
   { icon: '💻', label: 'Open CLI Runner',          shortcut: 'Ctrl+Shift+C',  fn: () => switchActivity('cli') },
   { icon: '🔌', label: 'Open MCP Servers',         shortcut: 'Ctrl+Shift+M',  fn: () => switchActivity('mcp') },
-  { icon: '🖥️', label: 'Open Frontend Visualizer', shortcut: 'Ctrl+Shift+V',  fn: () => openVisualizerTab()   },
+  { icon: '🖥️', label: 'Open Frontend Visualizer', shortcut: 'Ctrl+Alt+V',  fn: () => openVisualizerTab()   },
   { icon: '🔄', label: 'Restart IDE',             shortcut: '',              fn: () => location.reload()     },
   // Chat & AI
   { icon: '💬', label: 'Open AI Chat',            shortcut: 'Ctrl+Shift+J',  fn: () => switchActivity('chat') },
@@ -1017,18 +1017,37 @@ function addMCPServer() {
 function renderMCPServers() {
   const list = document.getElementById('mcp-server-list');
   if (!list) return;
-  list.innerHTML = ApexState.mcpServers.map((s, i) => `
-    <div class="mcp-server-card" data-idx="${i}">
-      <span class="mcp-server-icon">🔌</span>
-      <div class="mcp-server-info">
-        <div class="mcp-server-name">${s.name}</div>
-        <div class="mcp-server-cmd">${s.cmd}</div>
-      </div>
-      <span class="mcp-status-dot ${s.connected ? 'connected' : 'disconnected'}"
-            title="${s.connected ? 'Connected' : 'Disconnected'}"
-            onclick="toggleMCPServer(${i})"></span>
-    </div>
-  `).join('');
+  list.innerHTML = '';
+  ApexState.mcpServers.forEach((s, i) => {
+    const card = document.createElement('div');
+    card.className = 'mcp-server-card';
+    card.dataset.idx = i;
+
+    const icon = document.createElement('span');
+    icon.className = 'mcp-server-icon';
+    icon.textContent = '🔌';
+
+    const info = document.createElement('div');
+    info.className = 'mcp-server-info';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'mcp-server-name';
+    nameEl.textContent = s.name;
+    const cmdEl = document.createElement('div');
+    cmdEl.className = 'mcp-server-cmd';
+    cmdEl.textContent = s.cmd;
+    info.appendChild(nameEl);
+    info.appendChild(cmdEl);
+
+    const dot = document.createElement('span');
+    dot.className = `mcp-status-dot ${s.connected ? 'connected' : 'disconnected'}`;
+    dot.title = s.connected ? 'Connected' : 'Disconnected';
+    dot.addEventListener('click', () => toggleMCPServer(i));
+
+    card.appendChild(icon);
+    card.appendChild(info);
+    card.appendChild(dot);
+    list.appendChild(card);
+  });
 }
 
 function toggleMCPServer(idx) {
@@ -1041,7 +1060,8 @@ function toggleMCPServer(idx) {
 
 function invokeMCPTool(tool) {
   termPrint('output', `[MCP] Invoking tool: ${tool}…`);
-  switchBottomTab('terminal', document.querySelector('.bottom-tab'));
+  const terminalTab = document.querySelector('.bottom-tab[onclick*="terminal"]');
+  switchBottomTab('terminal', terminalTab || document.querySelector('.bottom-tab'));
   const msgs = {
     read_file:       '[MCP] read_file → Enter path in terminal: mcp read <path>',
     write_file:      '[MCP] write_file → Enter path & content in terminal: mcp write <path> <content>',
@@ -1063,7 +1083,7 @@ function openVisualizerTab() {
 }
 
 function setVizViewport(size, btn) {
-  document.querySelectorAll('.viz-btn[onclick*="setVizViewport"]').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.visualizer-viewport-btns .viz-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   const wrap = document.getElementById('visualizer-frame-wrap');
   const iframe = document.getElementById('visualizer-iframe');
@@ -1080,12 +1100,23 @@ function loadVisualizerURL() {
   const url = urlInput?.value.trim();
   const iframe = document.getElementById('visualizer-iframe');
   if (!iframe || !url) return;
+  // Validate URL scheme to prevent javascript: and other non-web protocols
+  try {
+    const parsed = new URL(url, window.location.href);
+    if (!['http:', 'https:', 'about:'].includes(parsed.protocol)) {
+      termPrint('warn', '[Visualizer] Only HTTP, HTTPS, and about: URLs are allowed');
+      return;
+    }
+    iframe.src = parsed.href;
+  } catch (e) {
+    termPrint('warn', '[Visualizer] Invalid URL');
+    return;
+  }
   // Clear any stored HTML preview when loading a URL
   iframe.removeAttribute('data-html');
   const old = iframe.getAttribute('data-blob-url');
   if (old) { URL.revokeObjectURL(old); iframe.removeAttribute('data-blob-url'); }
   urlInput.placeholder = 'Enter URL or HTML to preview…';
-  iframe.src = url;
   termPrint('output', `[Visualizer] Loading: ${url}`);
 }
 
@@ -1101,7 +1132,11 @@ function refreshVisualizer() {
     iframe.setAttribute('data-blob-url', url);
     iframe.src = url;
   } else if (iframe.src && iframe.src !== 'about:blank') {
-    iframe.contentWindow.location.reload();
+    try {
+      iframe.contentWindow.location.reload();
+    } catch (e) {
+      iframe.src = iframe.src; // fallback for cross-origin iframes
+    }
   }
   termPrint('output', '[Visualizer] Refreshed');
 }
@@ -1527,7 +1562,7 @@ document.addEventListener('keydown', e => {
   if (ctrl && e.shiftKey && e.key === 'G') { e.preventDefault(); switchActivity('git'); return; }
   if (ctrl && e.shiftKey && e.key === 'C') { e.preventDefault(); switchActivity('cli'); return; }
   if (ctrl && e.shiftKey && e.key === 'M') { e.preventDefault(); switchActivity('mcp'); return; }
-  if (ctrl && e.shiftKey && e.key === 'V') { e.preventDefault(); openVisualizerTab(); return; }
+  if (ctrl && e.altKey && !e.shiftKey && e.key.toLowerCase() === 'v') { e.preventDefault(); openVisualizerTab(); return; }
   if (ctrl && e.shiftKey && e.key === 'J') { e.preventDefault(); switchActivity('chat'); return; }
   if (ctrl && e.key === 's') { e.preventDefault(); saveFile(); return; }
   if (ctrl && e.key === 'g') { e.preventDefault(); goToLine(); return; }
