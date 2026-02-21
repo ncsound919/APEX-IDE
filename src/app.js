@@ -92,11 +92,20 @@ const ApexBackend = (() => {
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
+          if (!msg || typeof msg.type === 'undefined') {
+            if (typeof console !== 'undefined' && console && console.warn) {
+              console.warn('[ApexBackend] WebSocket message missing "type" field:', msg);
+            }
+          }
           _wsHandlers.forEach(h => {
             if (msg.type === 'exit') h.onExit && h.onExit(msg.data);
             else h.onData && h.onData(msg.type, msg.data);
           });
-        } catch (_) {}
+        } catch (err) {
+          if (typeof console !== 'undefined' && console && console.error) {
+            console.error('[ApexBackend] Failed to parse WebSocket message:', err, 'raw data:', e && e.data);
+          }
+        }
       };
       ws.onclose = () => {
         _ws = null;
