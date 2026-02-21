@@ -1221,7 +1221,12 @@ async function callLLMAPI(history, model, systemPrompt) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model, messages, stream: false }),
-  }).catch(() => { throw new Error(`Ollama not reachable at ${endpoint}. Run: ollama serve`); });
+  }).catch((error) => {
+    // Preserve original network error information for debugging
+    console.error('Ollama fetch failed:', error);
+    const originalMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Ollama not reachable at ${endpoint}. Run: ollama serve. Original error: ${originalMessage}`);
+  });
   if (!res.ok) throw new Error(`Ollama error ${res.status}`);
   const data = await res.json();
   return data.message?.content || data.response || '';
