@@ -33,11 +33,12 @@ const ApexState = {
   projectName: '',
   projectType: 'general',
   mcpServers: [
-    { name: 'Filesystem', cmd: 'npx @modelcontextprotocol/server-filesystem', connected: true,  folderPath: '' },
-    { name: 'GitHub',     cmd: 'npx @modelcontextprotocol/server-github',     connected: false, folderPath: '' },
+    { id: 1, name: 'Filesystem', cmd: 'npx @modelcontextprotocol/server-filesystem', connected: true,  folderPath: '' },
+    { id: 2, name: 'GitHub',     cmd: 'npx @modelcontextprotocol/server-github',     connected: false, folderPath: '' },
   ],
   cliInstances: [],
   uploadedComponents: [],
+  _nextId: 3,
   cliHistory: [],
   cliHistoryIdx: -1,
   // Chat state
@@ -1014,12 +1015,16 @@ function addCLIInstance() {
   const folderEl = document.getElementById('cli-instance-folder');
   const name = nameEl?.value.trim();
   if (!name) { cliPrint('warn', '[CLI] Please enter a CLI name.'); return; }
+  if (ApexState.cliInstances.some(c => c.name === name)) {
+    cliPrint('warn', `[CLI] An instance named "${name}" already exists.`); return;
+  }
 
   const folderPath = extractFolderName(folderEl);
-  const instance = { name, folderPath, connected: false };
+  const id = ApexState._nextId++;
+  const instance = { id, name, folderPath, connected: false };
   ApexState.cliInstances.push(instance);
   if (folderPath) {
-    ApexState.uploadedComponents.push({ type: 'CLI', name, folderPath });
+    ApexState.uploadedComponents.push({ type: 'CLI', id, name, folderPath });
     renderSettingsComponents();
   }
   nameEl.value = '';
@@ -1072,14 +1077,14 @@ function renderCLIInstances() {
     folderFile.addEventListener('change', () => {
       const fp = extractFolderName(folderFile);
       if (!fp) return;
-      const instanceName = ApexState.cliInstances[i].name;
+      const instId = ApexState.cliInstances[i].id;
       ApexState.cliInstances[i].folderPath = fp;
-      const existing = ApexState.uploadedComponents.findIndex(c => c.type === 'CLI' && c.name === instanceName);
+      const existing = ApexState.uploadedComponents.findIndex(c => c.type === 'CLI' && c.id === instId);
       if (existing >= 0) ApexState.uploadedComponents[existing].folderPath = fp;
-      else ApexState.uploadedComponents.push({ type: 'CLI', name: instanceName, folderPath: fp });
+      else ApexState.uploadedComponents.push({ type: 'CLI', id: instId, name: ApexState.cliInstances[i].name, folderPath: fp });
       renderCLIInstances();
       renderSettingsComponents();
-      cliPrint('info', `[CLI] Folder "${fp}" linked to ${instanceName}`);
+      cliPrint('info', `[CLI] Folder "${fp}" linked to ${ApexState.cliInstances[i].name}`);
     });
     folderLabel.appendChild(folderFile);
 
@@ -1143,12 +1148,16 @@ function addMCPServer() {
   const name = nameEl?.value.trim();
   const cmd  = cmdEl?.value.trim();
   if (!name || !cmd) { termPrint('warn', '[MCP] Please enter server name and command.'); return; }
+  if (ApexState.mcpServers.some(s => s.name === name)) {
+    termPrint('warn', `[MCP] A server named "${name}" already exists.`); return;
+  }
 
   const folderPath = extractFolderName(folderEl);
-  const server = { name, cmd, connected: false, folderPath };
+  const id = ApexState._nextId++;
+  const server = { id, name, cmd, connected: false, folderPath };
   ApexState.mcpServers.push(server);
   if (folderPath) {
-    ApexState.uploadedComponents.push({ type: 'MCP', name, folderPath });
+    ApexState.uploadedComponents.push({ type: 'MCP', id, name, folderPath });
     renderSettingsComponents();
   }
   nameEl.value = '';
@@ -1203,14 +1212,14 @@ function renderMCPServers() {
     folderFile.addEventListener('change', () => {
       const fp = extractFolderName(folderFile);
       if (!fp) return;
-      const serverName = ApexState.mcpServers[i].name;
+      const serverId = ApexState.mcpServers[i].id;
       ApexState.mcpServers[i].folderPath = fp;
-      const existing = ApexState.uploadedComponents.findIndex(c => c.type === 'MCP' && c.name === serverName);
+      const existing = ApexState.uploadedComponents.findIndex(c => c.type === 'MCP' && c.id === serverId);
       if (existing >= 0) ApexState.uploadedComponents[existing].folderPath = fp;
-      else ApexState.uploadedComponents.push({ type: 'MCP', name: serverName, folderPath: fp });
+      else ApexState.uploadedComponents.push({ type: 'MCP', id: serverId, name: ApexState.mcpServers[i].name, folderPath: fp });
       renderMCPServers();
       renderSettingsComponents();
-      termPrint('output', `[MCP] Folder "${fp}" linked to ${serverName}`);
+      termPrint('output', `[MCP] Folder "${fp}" linked to ${ApexState.mcpServers[i].name}`);
     });
     folderLabel.appendChild(folderFile);
 

@@ -367,15 +367,15 @@
               <div class="cli-instance-list" id="cli-instance-list"></div>
               <div class="mcp-add-form" style="margin-top:8px">
                 <input type="text" class="mcp-input" id="cli-instance-name" placeholder="CLI instance name…" />
-                <label class="mcp-folder-row">
+                <div class="mcp-folder-row">
                   <span class="mcp-folder-label-text">📁 Folder</span>
-                  <label class="mcp-folder-pick-btn">
+                  <label class="mcp-folder-pick-btn" for="cli-instance-folder">
                     Browse
-                    <input type="file" id="cli-instance-folder" style="display:none" webkitdirectory multiple
-                           onchange="document.getElementById('cli-instance-folder-name').textContent=this.files.length?this.files[0].webkitRelativePath.split('/')[0]:'No folder selected'" />
                   </label>
+                  <input type="file" id="cli-instance-folder" style="display:none" webkitdirectory multiple
+                         onchange="document.getElementById('cli-instance-folder-name').textContent=this.files.length?this.files[0].webkitRelativePath.split('/')[0]:'No folder selected'" />
                   <span class="mcp-folder-name" id="cli-instance-folder-name">No folder selected</span>
-                </label>
+                </div>
                 <button class="btn-primary mcp-add-btn" onclick="addCLIInstance()">+ Add CLI</button>
               </div>
             </div>
