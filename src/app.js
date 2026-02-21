@@ -1421,6 +1421,11 @@ function maybeOfferBuildPlanImport(text) {
   if (steps.length >= LOGIC_MIN_PLAN_STEPS) {
     _pendingBuildPlanText = text;
     showBuildPlanBanner(steps.length);
+  } else {
+    // Clear any stale pending build plan and banner when no valid plan is detected
+    _pendingBuildPlanText = '';
+    const existing = document.getElementById('logic-import-banner');
+    if (existing) existing.remove();
   }
 }
 
