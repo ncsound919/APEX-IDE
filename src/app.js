@@ -779,8 +779,22 @@ function toggleWordWrap(on) {
   if (ApexState.monacoEditor) ApexState.monacoEditor.updateOptions({ wordWrap: on ? 'on' : 'off' });
 }
 function setMinimap(on) {
-  ApexState.minimapEnabled = !!on;
-  if (ApexState.monacoEditor) ApexState.monacoEditor.updateOptions({ minimap: { enabled: ApexState.minimapEnabled } });
+  const enabled = !!on;
+  ApexState.minimapEnabled = enabled;
+  // Persist minimap preference so Settings and command palette stay consistent
+  try {
+    window.localStorage.setItem('apex.minimapEnabled', JSON.stringify(enabled));
+  } catch (e) {
+    // Ignore storage errors (e.g., private mode or disabled storage)
+  }
+  // Keep Settings checkbox in sync with current state
+  const settingsMinimap = document.getElementById('settings-minimap');
+  if (settingsMinimap) {
+    settingsMinimap.checked = enabled;
+  }
+  if (ApexState.monacoEditor) {
+    ApexState.monacoEditor.updateOptions({ minimap: { enabled } });
+  }
 }
 function toggleVimModeCmd() {
   const cb = document.getElementById('vim-mode');
