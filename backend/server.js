@@ -310,7 +310,7 @@ app.get('/api/git/log', fsLimiter, async (req, res) => {
 
 app.get('/api/git/diff', fsLimiter, async (req, res) => {
   try {
-    const file   = req.query.file ? ['--', req.query.file] : [];
+    const file   = req.query.file ? ['--', safeResolve(req.query.file)] : [];
     const staged = req.query.staged === '1';
     const args   = staged ? ['diff', '--staged', ...file] : ['diff', ...file];
     const output = await runGit(args);
