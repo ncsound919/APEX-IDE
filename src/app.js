@@ -97,6 +97,10 @@ const COMMANDS = [
   { icon: '🔧', label: 'AI: Fix Errors',          shortcut: 'Alt+F',         fn: () => aiAction('fix')       },
   { icon: '📝', label: 'AI: Add Documentation',   shortcut: '',              fn: () => aiAction('docs')      },
   { icon: '⚡', label: 'AI: Optimize Code',       shortcut: '',              fn: () => aiAction('optimize')  },
+  { icon: '🟣', label: 'Inspired: Cursor Composer Flow', shortcut: '',       fn: () => runInspiredFeature('cursor-composer') },
+  { icon: '🧲', label: 'Inspired: Antigravity Context Orbit', shortcut: '',  fn: () => runInspiredFeature('antigravity-orbit') },
+  { icon: '💙', label: 'Inspired: VSCode Command Brain', shortcut: '',       fn: () => runInspiredFeature('vscode-command-brain') },
+  { icon: '🌊', label: 'Inspired: Windsurf Flow Mode', shortcut: '',         fn: () => runInspiredFeature('windsurf-flow') },
   // Editor utilities
   { icon: '✏️', label: 'Format Document',          shortcut: 'Shift+Alt+F',   fn: () => formatDocument()      },
   { icon: '🔢', label: 'Go to Line',              shortcut: 'Ctrl+G',        fn: () => goToLine()            },
@@ -709,6 +713,18 @@ function toggleBridge(name, btn) {
   btn.closest('.bridge-card').classList.toggle('active', !isOn);
   const action = isOn ? 'disconnected' : 'connected';
   termPrint('output', `[Bridge] ${name} ${action}`);
+}
+
+function runInspiredFeature(feature) {
+  const msgs = {
+    'cursor-composer':      '[Inspired] Cursor Composer Flow → Drafting an agentic multi-file plan from current selection…',
+    'antigravity-orbit':    '[Inspired] Antigravity Context Orbit → Pulling surrounding files and symbols into working memory…',
+    'vscode-command-brain': '[Inspired] VSCode Command Brain → Ranking likely commands and shortcuts for current task…',
+    'windsurf-flow':        '[Inspired] Windsurf Flow Mode → Streaming paired plan + edits with checkpoint updates…',
+  };
+  termPrint('output', msgs[feature] || `[Inspired] Running ${feature}…`);
+  const terminalTabBtn = document.querySelector('.bottom-tab[data-tab="terminal"]');
+  if (terminalTabBtn) switchBottomTab('terminal', terminalTabBtn);
 }
 
 function startOllama() {

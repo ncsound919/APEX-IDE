@@ -21,6 +21,7 @@ Built from the [`Desktop IDE`](Desktop%20IDE) JSON specification:
 |-------|-------------|
 | **LLM Router Panel** | Provider health dashboard, cache hit rates, token usage charts, one-click failover |
 | **IDE Bridge Hub** | VSCode/Zed/Cursor/JetBrains bridge cards, quality score indicators |
+| **Inspired Workflows** | Cursor Composer Flow, Antigravity Context Orbit, VSCode Command Brain, Windsurf Flow Mode |
 | **Vibe Layer Dashboard** | Confidence/Intent scores (live), one-click fixes queue, undo stack visualizer, Rookie/Expert mode |
 
 ### 🎛️ Domain Adapters
