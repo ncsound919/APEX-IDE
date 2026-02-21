@@ -635,7 +635,12 @@ const CMD_HANDLERS = {
   whoami: () => termPrint('output', ApexState.userHandle),
   date: () => termPrint('output', new Date().toString()),
   uptime: () => {
-    const mins = Math.floor((Date.now() - (ApexState.session?.startTime || Date.now())) / 60000);
+    const session = ApexState.session;
+    if (!session || !session.startTime) {
+      termPrint('warn', 'Session uptime is not available yet (session not initialized).');
+      return;
+    }
+    const mins = Math.floor((Date.now() - session.startTime) / 60000);
     termPrint('output', `Session uptime: ${mins < 60 ? mins + 'm' : Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm'}`);
   },
   history: () => {
