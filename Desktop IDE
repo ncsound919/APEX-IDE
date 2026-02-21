@@ -1,0 +1,66 @@
+I've been building a desktop environment to house it. I call it Apex. once I put this in it it'll be Apex Megacode.  give me a json of what Apex needs to be most effective before I add Megacode
+
+{
+  "core_components": {
+    "window_manager": {
+      "type": "Tiling or floating with hotkeys",
+      "purpose": "Efficient multi-pane coding: split Megacode terminal, IDE previews, file trees; low-RAM (Electron/Web-based like your Monaco prefs)",
+      "integrations": ["WebSocket listener for Megacode bridges (ports 9742/9744)", "VSCode/Zed embedding"]
+    },
+    "terminal_emulator": {
+      "type": "Multi-tab with GPU accel",
+      "purpose": "Host Megacode CLI/agent; stream live diffs/output",
+      "features": ["Split panes for router logs/providers", "Persist sessions like marathon mode"]
+    },
+    "file_browser": {
+      "type": "Git-aware with previews",
+      "purpose": "Navigate repos fast; preview code diffs from Megacode scorer",
+      "integrations": ["Hook to LLMProvider for git commands via natural lang"]
+    }
+  },
+  "megacode_optimizations": {
+    "llm_router_panel": {
+      "features": ["Provider health/status dashboard", "Cache hit-rate graphs", "Token usage tracker", "One-click failover toggle"],
+      "low_spec": "Lazy-load, threshold-based refresh"
+    },
+    "ide_bridge_hub": {
+      "features": ["Unified pane for VSCode/Zed/Cursor diffs", "Auto-switch editors", "JetBrains HTTP proxy"],
+      "purpose": "Centralize OverCoat extensions; stream quality scores inline"
+    },
+    "vibe_layer_dashboard": {
+      "features": ["Confidence/Intent scores live", "One-click fixes queue", "Rookie/Expert mode toggle", "Undo stack visualizer"],
+      "ui": "Collapsible sidebar; dark theme hip-hop aesthetic"
+    }
+  },
+  "project_ecosystem_support": {
+    "domain_adapters": [
+      {
+        "name": "Music Production",
+        "tools": ["DAW plugin scaffolder", "Audio preview pane (WebAudio API)", "Beat script runner via Ollama/DeepSeek"]
+      },
+      {
+        "name": "Biotech",
+        "tools": ["PubChem/SMILES visualizer", "Histotripsy sim console", "Mutation tracker (MuTracker hook)"]
+      },
+      {
+        "name": "Graphic Novels",
+        "tools": ["NFT mint preview", "Panel layout editor", "Gemini vision for storyboarding"]
+      }
+    ],
+    "monetization_panel": {
+      "features": ["Gumroad/Stripe integration", "NFT drop scheduler", "Usage stats for pro tiers"],
+      "purpose": "Track Apex Megacode sessions for $500M vision"
+    }
+  },
+  "low_spec_constraints": {
+    "memory": "<2GB target: Use WebWorkers, virtual scrolling, no Docker",
+    "storage": "460GB limit: SQLite for cache/sessions, hidden file cleaner",
+    "performance": ["Lazy modules (your Cloudflare Workers style)", "Multi-LLM token optimizer", "Offline-first with Ollama"]
+  },
+  "ui_ux": {
+    "theme": "Hip-hop culture: Bold fonts, comic gradients, boxing sim motifs",
+    "hotkeys": "Vim-like for speed; customizable JSON",
+    "onboarding": "Wizard for LLM keys, project import (Overlay365/Cheetah)"
+  }
+}
+
