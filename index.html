@@ -131,6 +131,7 @@
         <button class="activity-btn active" data-panel="explorer" onclick="switchActivity('explorer',this)" title="File Explorer">📁</button>
         <button class="activity-btn" data-panel="search" onclick="switchActivity('search',this)" title="Search">🔍</button>
         <button class="activity-btn" data-panel="git" onclick="switchActivity('git',this)" title="Git">⎇</button>
+        <button class="activity-btn" data-panel="chat" onclick="switchActivity('chat',this)" title="AI Chat">💬</button>
         <button class="activity-btn" data-panel="llm-router" onclick="switchActivity('llm-router',this)" title="LLM Router">🧠</button>
         <button class="activity-btn" data-panel="ide-bridge" onclick="switchActivity('ide-bridge',this)" title="IDE Bridge">⚡</button>
         <button class="activity-btn" data-panel="domains" onclick="switchActivity('domains',this)" title="Domain Adapters">🎛️</button>
@@ -355,6 +356,53 @@
           </div>
         </div>
 
+        <!-- AI Chat Panel -->
+        <div class="panel" id="panel-chat">
+          <div class="panel-header">
+            <span>AI CHAT</span>
+            <div class="panel-actions">
+              <select id="chat-model-select" class="chat-model-select" title="Select model">
+                <option value="gpt-4o">GPT-4o</option>
+                <option value="gpt-4o-mini">GPT-4o mini</option>
+                <option value="claude-3-5-sonnet-20241022">Claude 3.5</option>
+                <option value="deepseek-coder">DeepSeek</option>
+                <option value="llama3">Ollama</option>
+              </select>
+              <button class="icon-btn" onclick="toggleSystemPrompt()" title="System Prompt">⚙️</button>
+              <button class="icon-btn" onclick="clearChat()" title="Clear Chat">🗑️</button>
+            </div>
+          </div>
+          <div class="chat-system-prompt hidden" id="chat-system-prompt-area">
+            <textarea id="chat-system-input" class="chat-system-textarea" placeholder="System prompt (e.g. 'You are a senior JS engineer…')" rows="3"></textarea>
+          </div>
+          <div class="chat-messages" id="chat-messages">
+            <div class="chat-welcome">
+              <div class="chat-welcome-icon">🧠</div>
+              <div class="chat-welcome-title">APEX AI</div>
+              <div class="chat-welcome-text">Ask about your code. Select text in the editor and use the actions below for context-aware help.</div>
+              <div class="chat-quick-actions">
+                <button class="chat-quick-btn" onclick="aiAction('explain')">📖 Explain Code</button>
+                <button class="chat-quick-btn" onclick="aiAction('refactor')">♻️ Refactor</button>
+                <button class="chat-quick-btn" onclick="aiAction('tests')">🧪 Write Tests</button>
+                <button class="chat-quick-btn" onclick="aiAction('fix')">🔧 Fix Errors</button>
+                <button class="chat-quick-btn" onclick="aiAction('docs')">📝 Add Docs</button>
+                <button class="chat-quick-btn" onclick="aiAction('optimize')">⚡ Optimize</button>
+              </div>
+            </div>
+          </div>
+          <div class="chat-context-row">
+            <button class="chat-context-btn" onclick="askAboutCode()" title="Send selected code to chat">📋 Ask about selection</button>
+            <button class="chat-context-btn" onclick="explainError()" title="Explain current error">🐛 Explain error</button>
+          </div>
+          <div class="chat-input-area">
+            <textarea id="chat-input" class="chat-input" placeholder="Ask anything… (Enter to send, Shift+Enter for new line)" rows="3" onkeydown="handleChatKey(event)"></textarea>
+            <div class="chat-input-footer">
+              <span class="chat-input-hint" id="chat-input-hint">Enter ↵ to send</span>
+              <button class="chat-send-btn" onclick="sendChatMessage()" id="chat-send-btn">Send ⬆</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Settings Panel -->
         <div class="panel" id="panel-settings">
           <div class="panel-header"><span>SETTINGS</span></div>
@@ -387,6 +435,26 @@
               <label class="toggle-row">
                 <span>Minimap</span>
                 <input type="checkbox" class="toggle-switch" checked />
+              </label>
+            </div>
+            <div class="settings-section">
+              <div class="section-label">API KEYS</div>
+              <div class="settings-note">🔒 Keys are stored locally in your browser — never sent to our servers.</div>
+              <label class="settings-row">
+                <span>OpenAI</span>
+                <input type="password" id="settings-key-openai" placeholder="sk-…" onchange="updateApiKey('openai',this.value)" />
+              </label>
+              <label class="settings-row">
+                <span>Anthropic</span>
+                <input type="password" id="settings-key-anthropic" placeholder="sk-ant-…" onchange="updateApiKey('anthropic',this.value)" />
+              </label>
+              <label class="settings-row">
+                <span>DeepSeek</span>
+                <input type="password" id="settings-key-deepseek" placeholder="ds-…" onchange="updateApiKey('deepseek',this.value)" />
+              </label>
+              <label class="settings-row">
+                <span>Ollama URL</span>
+                <input type="text" id="settings-key-ollama" placeholder="http://localhost:11434" onchange="updateApiKey('ollama',this.value)" />
               </label>
             </div>
             <div class="settings-section">
@@ -432,6 +500,27 @@
         </div>
 
         <!-- EDITOR PANES -->
+        <!-- Breadcrumb Navigation -->
+        <div class="breadcrumb-bar" id="breadcrumb-bar">
+          <span class="breadcrumb-item">⬡ APEX</span>
+          <span class="breadcrumb-sep">›</span>
+          <span class="breadcrumb-item" id="breadcrumb-project">Project</span>
+          <span class="breadcrumb-sep" id="breadcrumb-sep2" style="display:none">›</span>
+          <span class="breadcrumb-item breadcrumb-file" id="breadcrumb-file" style="display:none"></span>
+        </div>
+        <!-- AI Toolbar -->
+        <div class="ai-toolbar" id="ai-toolbar">
+          <span class="ai-toolbar-label">🧠 AI Actions:</span>
+          <button class="ai-action-btn" onclick="aiAction('explain')" title="Explain selected code (Alt+E)">Explain</button>
+          <button class="ai-action-btn" onclick="aiAction('refactor')" title="Refactor selection (Alt+R)">Refactor</button>
+          <button class="ai-action-btn" onclick="aiAction('tests')" title="Generate unit tests (Alt+T)">Tests</button>
+          <button class="ai-action-btn" onclick="aiAction('fix')" title="Fix errors in selection (Alt+F)">Fix</button>
+          <button class="ai-action-btn" onclick="aiAction('docs')" title="Generate documentation">Docs</button>
+          <div class="ai-toolbar-sep"></div>
+          <button class="ai-action-btn ai-action-util" onclick="formatDocument()" title="Format Document (Shift+Alt+F)">Format</button>
+          <button class="ai-action-btn ai-action-util" onclick="goToLine()" title="Go to Line (Ctrl+G)">Go to Line</button>
+          <button class="ai-action-btn ai-action-util" onclick="toggleMinimap()" title="Toggle Minimap">Minimap</button>
+        </div>
         <div class="editor-panes" id="editor-panes">
           <!-- Welcome Tab Content -->
           <div class="editor-pane active" id="pane-welcome">
@@ -441,7 +530,7 @@
                 <h1 class="welcome-title">APEX IDE</h1>
                 <p class="welcome-subtitle">MEGACODE EDITION — <em>Where Code Meets Culture</em></p>
               </div>
-              <div class="welcome-grid">
+              <div class="welcome-grid welcome-grid-5">
                 <div class="welcome-card" onclick="newFile()">
                   <div class="welcome-card-icon">📄</div>
                   <div class="welcome-card-title">New File</div>
@@ -461,6 +550,11 @@
                   <div class="welcome-card-icon">⌘</div>
                   <div class="welcome-card-title">Command Palette</div>
                   <div class="welcome-card-desc">Ctrl+P for all commands</div>
+                </div>
+                <div class="welcome-card" onclick="switchActivity('chat')">
+                  <div class="welcome-card-icon">💬</div>
+                  <div class="welcome-card-title">AI Chat</div>
+                  <div class="welcome-card-desc">Ask your AI assistant anything</div>
                 </div>
               </div>
               <div class="welcome-recents">
@@ -493,6 +587,14 @@
                   <span class="shortcut"><kbd>Ctrl+Shift+G</kbd> Git</span>
                   <span class="shortcut"><kbd>Ctrl+\\</kbd> Split Editor</span>
                   <span class="shortcut"><kbd>Ctrl+Z</kbd> Undo</span>
+                  <span class="shortcut"><kbd>Ctrl+Shift+J</kbd> AI Chat</span>
+                  <span class="shortcut"><kbd>Alt+E</kbd> Explain Code</span>
+                  <span class="shortcut"><kbd>Alt+R</kbd> Refactor</span>
+                  <span class="shortcut"><kbd>Alt+T</kbd> Write Tests</span>
+                  <span class="shortcut"><kbd>Alt+F</kbd> Fix Errors</span>
+                  <span class="shortcut"><kbd>Ctrl+G</kbd> Go to Line</span>
+                  <span class="shortcut"><kbd>Shift+Alt+F</kbd> Format Doc</span>
+                  <span class="shortcut"><kbd>Ctrl+D</kbd> Select Word</span>
                 </div>
               </div>
             </div>
