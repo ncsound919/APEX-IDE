@@ -37,9 +37,28 @@ const ApexBackend = (() => {
 
   /* ── Health probe ── */
   async function probe() {
+    const timeoutMs = 1500;
     try {
-      const data = await fetch(BASE + '/api/health', { signal: AbortSignal.timeout(1500) })
-        .then(r => r.ok ? r.json() : null).catch(() => null);
+      const controller = (typeof AbortController !== 'undefined')
+        ? new AbortController()
+        : null;
+      const fetchOptions = controller ? { signal: controller.signal } : {};
+      const fetchPromise = fetch(BASE + '/api/health', fetchOptions)
+        .then(r => (r.ok ? r.json() : null))
+        .catch(() => null);
+      const timeoutPromise = new Promise(resolve => {
+        setTimeout(() => {
+          if (controller) {
+            try {
+              controller.abort();
+            } catch (_) {
+              // ignore abort errors
+            }
+          }
+          resolve(null);
+        }, timeoutMs);
+      });
+      const data = await Promise.race([fetchPromise, timeoutPromise]);
       connected = !!(data && data.status === 'ok');
     } catch (_) {
       connected = false;
